@@ -1,0 +1,6 @@
+# Rules
+
+- Always write comprehensive tests for new features
+- Use descriptive variable names, no abbreviations
+- All errors must be properly handled and logged
+- Code must follow the project's architectural guidelines in AGENTS.md
