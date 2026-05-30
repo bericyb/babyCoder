@@ -1,0 +1,51 @@
+.
+├── documents
+│   ├── antigravity
+│   ├── babyCoder
+│   ├── claude-code
+│   ├── cline
+│   ├── cursor
+│   ├── opencode
+│   └── pi
+├── email
+│   ├── antigravity
+│   ├── babyCoder
+│   ├── claude-code
+│   ├── cline
+│   ├── cursor
+│   ├── opencode
+│   └── pi
+├── server
+│   ├── antigravity
+│   ├── babyCoder
+│   ├── claude-code
+│   ├── cline
+│   ├── cursor
+│   ├── opencode
+│   └── pi
+├── services
+│   ├── antigravity
+│   ├── babyCoder
+│   ├── claude-code
+│   ├── cline
+│   ├── cursor
+│   ├── opencode
+│   └── pi
+├── tests
+│   ├── antigravity
+│   ├── babyCoder
+│   ├── claude-code
+│   ├── cline
+│   ├── cursor
+│   ├── opencode
+│   └── pi
+└── tickets
+    ├── antigravity
+    ├── babyCoder
+    ├── claude-code
+    ├── cline
+    ├── cursor
+    ├── opencode
+    └── pi
+
+49 directories, 0 files

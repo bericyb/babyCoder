@@ -8,7 +8,6 @@ import (
 
 	"github.com/exar/babycoder/internal/services/ai_provider"
 	"github.com/exar/babycoder/internal/services/analyzer"
-	"github.com/exar/babycoder/internal/services/doctracker"
 	"github.com/exar/babycoder/internal/services/testrunner"
 	"github.com/exar/babycoder/internal/storage"
 )
@@ -20,7 +19,6 @@ type ToolRegistry struct {
 	tools       map[string]Tool
 	analyzer    *analyzer.Analyzer
 	testRunner  *testrunner.TestRunner
-	docTracker  *doctracker.DocTracker
 	database    *storage.Database
 }
 
@@ -31,23 +29,22 @@ type Tool interface {
 }
 
 // NewToolRegistry creates a new tool registry
-func NewToolRegistry(projectRoot, sessionID string, codeAnalyzer *analyzer.Analyzer, testRunner *testrunner.TestRunner, docTracker *doctracker.DocTracker, database *storage.Database) *ToolRegistry {
+func NewToolRegistry(projectRoot, sessionID string, codeAnalyzer *analyzer.Analyzer, testRunner *testrunner.TestRunner, database *storage.Database) *ToolRegistry {
 	registry := &ToolRegistry{
 		projectRoot: projectRoot,
 		sessionID:   sessionID,
 		tools:       make(map[string]Tool),
 		analyzer:    codeAnalyzer,
 		testRunner:  testRunner,
-		docTracker:  docTracker,
 		database:    database,
 	}
 
 	// Register file operation tools
 	registry.registerTool(&ReadFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer})
-	registry.registerTool(&WriteFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner, docTracker: docTracker})
+	registry.registerTool(&WriteFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner})
 	registry.registerTool(&ListFilesTool{projectRoot: projectRoot})
-	registry.registerTool(&LineEditFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner, docTracker: docTracker})
-	registry.registerTool(&FindAndReplaceEditFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner, docTracker: docTracker})
+	registry.registerTool(&LineEditFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner})
+	registry.registerTool(&FindAndReplaceEditFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner})
 
 	// Register code analysis tools
 	registry.registerTool(&CheckCodeStatusTool{analyzer: codeAnalyzer})

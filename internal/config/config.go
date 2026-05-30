@@ -11,7 +11,6 @@ import (
 type Configuration struct {
 	AIProvider AIProviderConfiguration `json:"ai_provider"`
 	Agent      AgentConfiguration      `json:"agent"`
-	Project    ProjectConfiguration    `json:"project"`
 	Prompts    PromptsConfiguration    `json:"prompts,omitempty"` // Optional prompt customization
 }
 
@@ -26,15 +25,7 @@ type AIProviderConfiguration struct {
 
 // AgentConfiguration holds agent behavior settings
 type AgentConfiguration struct {
-	MaxIterations int  `json:"max_iterations"` // Maximum number of agent loop iterations
-	Verbose       bool `json:"verbose"`        // Enable verbose logging
-	AutoCommit    bool `json:"auto_commit"`    // Automatically commit changes
-}
-
-// ProjectConfiguration holds project-specific settings
-type ProjectConfiguration struct {
-	Root            string   `json:"root"`             // Project root directory
-	ExcludePatterns []string `json:"exclude_patterns"` // Patterns to exclude from analysis
+	MaxIterations int `json:"max_iterations"` // Maximum number of agent loop iterations
 }
 
 // PromptsConfiguration holds prompt customization settings
@@ -55,16 +46,6 @@ func DefaultConfiguration() *Configuration {
 		},
 		Agent: AgentConfiguration{
 			MaxIterations: 10,
-			Verbose:       false,
-			AutoCommit:    false,
-		},
-		Project: ProjectConfiguration{
-			Root: ".",
-			ExcludePatterns: []string{
-				"vendor/",
-				"**/*_test.go",
-				"**/*.pb.go",
-			},
 		},
 		Prompts: PromptsConfiguration{},
 	}
@@ -91,19 +72,10 @@ func LoadOrDefaultConfiguration(projectRoot string) (*Configuration, error) {
 	
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Configuration file does not exist, use defaults
-		config := DefaultConfiguration()
-		config.Project.Root = projectRoot
-		return config, nil
+		return DefaultConfiguration(), nil
 	}
 
-	config, err := LoadConfiguration(configPath)
-	if err != nil {
-		return nil, err
-	}
-
-	// Override project root with provided path
-	config.Project.Root = projectRoot
-	return config, nil
+	return LoadConfiguration(configPath)
 }
 
 // SaveConfiguration saves configuration to a file

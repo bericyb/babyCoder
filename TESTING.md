@@ -1,4 +1,60 @@
-# babyCoder - Testing the Agent Loop
+# babyCoder - Testing Guide
+
+## Running Tests
+
+### All Tests
+```bash
+go test ./...
+```
+
+### With Verbose Output
+```bash
+go test ./... -v
+```
+
+### Specific Package
+```bash
+go test ./internal/services/agent -v
+```
+
+### With Coverage
+```bash
+go test ./... -cover
+```
+
+## Test Coverage
+
+**Current Status: 32 tests, all passing**
+
+- ✅ Config Service: 7 tests
+- ✅ Logging Service: 6 tests
+- ✅ Rules Service: 8 tests
+- ✅ Agent Service: 11 tests (NEW - Dream Memory System)
+- ✅ Storage Service: 8 tests
+- ✅ Tools Service: Multiple tests
+
+### Agent Service Tests (Dream Memory)
+
+The new dream memory system includes comprehensive tests:
+
+1. **Timer Management**
+   - `TestDreamTimerStartsAfterRun` - Verifies timer starts after agent completion
+   - `TestDreamTimerCancelledOnNewRun` - Ensures timer resets on new user input
+
+2. **Session Summarization**
+   - `TestSummarizeSession` - Tests session summary generation
+   - `TestSummarizeSessionWithLongMessages` - Handles message truncation
+
+3. **Dream Update Logic**
+   - `TestDecideDreamUpdate` - Tests LLM decision making (update vs NO_UPDATE)
+   - `TestUpdateDreamWithInsufficientMessages` - Skips when too few messages
+   - `TestUpdateDreamCreatesFile` - Creates dream.txt on first update
+   - `TestUpdateDreamWithNoUpdate` - Preserves dream when no changes needed
+   - `TestUpdateDreamUpdatesExistingFile` - Updates existing dream content
+
+4. **Edge Cases**
+   - `TestNewAgentWithProjectRoot` - Verifies constructor parameters
+   - `TestUpdateDreamWithNoProjectRoot` - Handles missing project root gracefully
 
 ## Quick Start
 

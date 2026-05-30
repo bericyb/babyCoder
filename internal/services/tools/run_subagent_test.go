@@ -15,6 +15,15 @@ type MockAgent struct {
 	userMessages   []string
 	iterations     int
 	messages       []ai_provider.Message
+	sessionID      string
+}
+
+func (m *MockAgent) SetSessionID(id string) {
+	m.sessionID = id
+}
+
+func (m *MockAgent) GetSessionID() string {
+	return m.sessionID
 }
 
 func (m *MockAgent) AddSystemMessage(content string) {
@@ -88,6 +97,9 @@ func TestSubAgentToolExecution(t *testing.T) {
 	// Create mock agent factory
 	mockAgent := &MockAgent{}
 	agentFactory := func(sessionID string) (AgentInterface, agent.ToolExecutor, error) {
+		// Store session ID in mock
+		mockAgent.SetSessionID(sessionID)
+		
 		// Verify sub-session was created
 		session, err := database.GetSession(sessionID)
 		if err != nil {
@@ -158,20 +170,30 @@ func TestSubAgentToolExecution(t *testing.T) {
 	}
 
 	// Verify sub-session was created and marked completed
-	subSessions, err := database.GetSubSessions("parent-123")
+	// Get the session ID from the mock agent
+	if mockAgent.GetSessionID() == "" {
+		t.Fatal("Expected sub-session ID to be set")
+	}
+	
+	session, err := database.GetSession(mockAgent.GetSessionID())
 	if err != nil {
-		t.Fatalf("Failed to get sub-sessions: %v", err)
+		t.Fatalf("Failed to get sub-session: %v", err)
 	}
 
-	if len(subSessions) != 1 {
-		t.Errorf("Expected 1 sub-session, got %d", len(subSessions))
-	} else {
-		if subSessions[0].Status != "completed" {
-			t.Errorf("Expected sub-session status='completed', got '%s'", subSessions[0].Status)
-		}
-		if subSessions[0].TaskDescription != "Find out how the notification system works" {
-			t.Errorf("Expected task_description to be set, got: %s", subSessions[0].TaskDescription)
-		}
+	if session == nil {
+		t.Fatal("Expected sub-session to exist")
+	}
+
+	if session.Status != "completed" {
+		t.Errorf("Expected sub-session status='completed', got '%s'", session.Status)
+	}
+	
+	if session.TaskDescription != "Find out how the notification system works" {
+		t.Errorf("Expected task_description to be set, got: %s", session.TaskDescription)
+	}
+	
+	if session.ParentSessionID == nil || *session.ParentSessionID != "parent-123" {
+		t.Error("Expected parent_session_id to be 'parent-123'")
 	}
 }
 

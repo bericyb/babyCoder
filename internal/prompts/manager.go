@@ -32,6 +32,22 @@ func NewPromptManager(projectRoot string) *PromptManager {
 	}
 }
 
+// NewPromptManagerFromConfig creates a prompt manager with config overrides pre-loaded
+func NewPromptManagerFromConfig(projectRoot string, mainAgentPrompt string, subAgentPrompt string) (*PromptManager, error) {
+	manager := NewPromptManager(projectRoot)
+	
+	promptConfig := map[string]interface{}{
+		"main_agent": mainAgentPrompt,
+		"sub_agent":  subAgentPrompt,
+	}
+	
+	if err := manager.LoadFromConfig(promptConfig); err != nil {
+		return nil, err
+	}
+	
+	return manager, nil
+}
+
 // SetOverride sets a custom prompt override
 func (pm *PromptManager) SetOverride(promptType PromptType, content string) {
 	pm.overrides[promptType] = content
@@ -92,6 +108,26 @@ func (pm *PromptManager) LoadFromConfig(config map[string]interface{}) error {
 	}
 	
 	return nil
+}
+
+// BuildSystemPrompt constructs the complete system prompt by combining:
+// 1. Base prompt (from config or default)
+// 2. Project rules (from rules.md if exists)
+// 3. Project context/dream (from .babycoder/dream.txt if exists)
+func (pm *PromptManager) BuildSystemPrompt(promptType PromptType, rulesText string, dreamContent string) string {
+	prompt := pm.GetPrompt(promptType)
+	
+	// Append rules if provided
+	if rulesText != "" {
+		prompt = prompt + "\n\n" + rulesText
+	}
+	
+	// Append dream/context if provided
+	if dreamContent != "" {
+		prompt = prompt + "\n\n## PROJECT CONTEXT\n" + dreamContent
+	}
+	
+	return prompt
 }
 
 // getDefaultPrompt returns the built-in default prompt

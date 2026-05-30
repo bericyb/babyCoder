@@ -29,15 +29,6 @@ func TestDefaultConfiguration(t *testing.T) {
 	if config.Agent.MaxIterations <= 0 {
 		t.Error("Agent max iterations should be positive")
 	}
-
-	// Test Project defaults
-	if config.Project.Root != "." {
-		t.Errorf("Expected project root '.', got %s", config.Project.Root)
-	}
-
-	if len(config.Project.ExcludePatterns) == 0 {
-		t.Error("Expected some default exclude patterns")
-	}
 }
 
 func TestLoadConfiguration(t *testing.T) {
@@ -54,13 +45,7 @@ func TestLoadConfiguration(t *testing.T) {
 			"api_key": "test-key"
 		},
 		"agent": {
-			"max_iterations": 5,
-			"verbose": true,
-			"auto_commit": true
-		},
-		"project": {
-			"root": "/test/project",
-			"exclude_patterns": ["*.test"]
+			"max_iterations": 5
 		}
 	}`
 
@@ -91,23 +76,6 @@ func TestLoadConfiguration(t *testing.T) {
 	if config.Agent.MaxIterations != 5 {
 		t.Errorf("Expected max iterations 5, got %d", config.Agent.MaxIterations)
 	}
-
-	if !config.Agent.Verbose {
-		t.Error("Expected verbose to be true")
-	}
-
-	if !config.Agent.AutoCommit {
-		t.Error("Expected auto_commit to be true")
-	}
-
-	// Verify Project
-	if config.Project.Root != "/test/project" {
-		t.Errorf("Expected project root '/test/project', got %s", config.Project.Root)
-	}
-
-	if len(config.Project.ExcludePatterns) != 1 || config.Project.ExcludePatterns[0] != "*.test" {
-		t.Errorf("Expected exclude patterns ['*.test'], got %v", config.Project.ExcludePatterns)
-	}
 }
 
 func TestLoadOrDefaultConfiguration(t *testing.T) {
@@ -127,11 +95,6 @@ func TestLoadOrDefaultConfiguration(t *testing.T) {
 	if config.AIProvider.Type != "lmstudio" {
 		t.Error("Expected default AI provider type")
 	}
-
-	// Project root should be overridden with provided path
-	if config.Project.Root != tempDir {
-		t.Errorf("Expected project root %s, got %s", tempDir, config.Project.Root)
-	}
 }
 
 func TestLoadOrDefaultConfigurationWithExistingFile(t *testing.T) {
@@ -148,13 +111,7 @@ func TestLoadOrDefaultConfigurationWithExistingFile(t *testing.T) {
 			"api_key": ""
 		},
 		"agent": {
-			"max_iterations": 15,
-			"verbose": false,
-			"auto_commit": false
-		},
-		"project": {
-			"root": ".",
-			"exclude_patterns": ["vendor/"]
+			"max_iterations": 15
 		}
 	}`
 
@@ -175,11 +132,6 @@ func TestLoadOrDefaultConfigurationWithExistingFile(t *testing.T) {
 
 	if config.Agent.MaxIterations != 15 {
 		t.Errorf("Expected 15 max iterations, got %d", config.Agent.MaxIterations)
-	}
-
-	// Project root should still be overridden
-	if config.Project.Root != tempDir {
-		t.Errorf("Expected project root %s, got %s", tempDir, config.Project.Root)
 	}
 }
 

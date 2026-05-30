@@ -1,0 +1,1 @@
+babyCoder is a Go-based AI coding agent optimized for smaller local language models. It uses hashline-based code addressing for precise edits and SQLite for persistence. Currently building a dream memory system for session context.

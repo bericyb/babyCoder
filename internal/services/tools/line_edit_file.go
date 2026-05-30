@@ -8,7 +8,6 @@ import (
 
 	"github.com/exar/babycoder/internal/services/ai_provider"
 	"github.com/exar/babycoder/internal/services/analyzer"
-	"github.com/exar/babycoder/internal/services/doctracker"
 	"github.com/exar/babycoder/internal/services/testrunner"
 )
 
@@ -17,7 +16,6 @@ type LineEditFileTool struct {
 	projectRoot string
 	analyzer    *analyzer.Analyzer
 	testRunner  *testrunner.TestRunner
-	docTracker  *doctracker.DocTracker
 }
 
 // Execute performs line-based editing on a file
@@ -115,9 +113,6 @@ func (tool *LineEditFileTool) Execute(arguments map[string]interface{}) (string,
 		}
 		if tool.testRunner != nil {
 			tool.testRunner.MarkDirty() // Mark that tests need to run
-		}
-		if tool.docTracker != nil {
-			tool.docTracker.CheckFileAsync(resolvedPath)
 		}
 	}
 

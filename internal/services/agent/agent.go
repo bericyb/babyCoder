@@ -20,20 +20,21 @@ type Agent struct {
 	sessionID     string
 	tools         []ai_provider.Tool
 	messages      []ai_provider.Message
-	messageIndex  int
 	systemPrompt  string // Custom system prompt (optional)
+	dreamTimer    *time.Timer
+	projectRoot   string
 }
 
 // NewAgent creates a new agent instance
-func NewAgent(provider ai_provider.Provider, configuration *config.AgentConfiguration, database *storage.Database) *Agent {
+func NewAgent(provider ai_provider.Provider, configuration *config.AgentConfiguration, database *storage.Database, projectRoot string) *Agent {
 	return &Agent{
 		provider:      provider,
 		configuration: configuration,
 		database:      database,
+		projectRoot:   projectRoot,
 		sessionID:     "",
 		tools:         []ai_provider.Tool{},
 		messages:      []ai_provider.Message{},
-		messageIndex:  0,
 	}
 }
 
@@ -87,16 +88,14 @@ func (agent *Agent) saveMessage(message ai_provider.Message) error {
 	}
 
 	dbMessage := &storage.Message{
-		SessionID:    agent.sessionID,
-		Role:         message.Role,
-		Content:      message.Content,
-		ToolCalls:    storage.MarshalToolCalls(message.ToolCalls),
-		ToolCallID:   message.ToolCallID,
-		MessageIndex: agent.messageIndex,
-		CreatedAt:    time.Now(),
+		SessionID:  agent.sessionID,
+		Role:       message.Role,
+		Content:    message.Content,
+		ToolCalls:  storage.MarshalToolCalls(message.ToolCalls),
+		ToolCallID: message.ToolCallID,
+		CreatedAt:  time.Now(),
 	}
 
-	agent.messageIndex++
 	return agent.database.SaveMessage(dbMessage)
 }
 
@@ -108,8 +107,18 @@ func (agent *Agent) RegisterTool(tool ai_provider.Tool) {
 // ToolExecutor is a function that executes a tool call and returns the result
 type ToolExecutor func(toolName string, arguments map[string]interface{}) (string, error)
 
+// UpdateDreamNow immediately updates the dream file based on the current session
+func (agent *Agent) UpdateDreamNow(ctx context.Context) {
+	agent.updateDream(ctx)
+}
+
 // Run executes the agent loop
 func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
+	// Cancel any existing dream timer
+	if agent.dreamTimer != nil {
+		agent.dreamTimer.Stop()
+	}
+	
 	// Only add system message if this is the first message
 	if len(agent.messages) == 0 {
 		// Use custom prompt if set, otherwise use empty (will be set by caller)
@@ -118,15 +127,7 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 		}
 	}
 
-	if agent.configuration.Verbose {
-		log.Printf("Starting agent loop with max iterations: %d\n", agent.configuration.MaxIterations)
-	}
-
 	for iteration := 0; iteration < agent.configuration.MaxIterations; iteration++ {
-		if agent.configuration.Verbose {
-			log.Printf("=== Iteration %d/%d ===\n", iteration+1, agent.configuration.MaxIterations)
-		}
-
 		// Create chat completion request
 		request := ai_provider.ChatCompletionRequest{
 			Messages:   agent.messages,
@@ -154,14 +155,12 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 		var assistantMessageID int64
 		if agent.sessionID != "" && agent.database != nil {
 			dbMessage := &storage.Message{
-				SessionID:    agent.sessionID,
-				Role:         assistantMessage.Role,
-				Content:      assistantMessage.Content,
-				ToolCalls:    storage.MarshalToolCalls(assistantMessage.ToolCalls),
-				MessageIndex: agent.messageIndex,
-				CreatedAt:    time.Now(),
+				SessionID: agent.sessionID,
+				Role:      assistantMessage.Role,
+				Content:   assistantMessage.Content,
+				ToolCalls: storage.MarshalToolCalls(assistantMessage.ToolCalls),
+				CreatedAt: time.Now(),
 			}
-			agent.messageIndex++
 			
 			if err := agent.database.SaveMessage(dbMessage); err != nil {
 				log.Printf("Warning: failed to save assistant message: %v\n", err)
@@ -177,30 +176,20 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 			}
 		}
 
-		if agent.configuration.Verbose {
-			log.Printf("Assistant: %s\n", assistantMessage.Content)
-			if len(assistantMessage.ToolCalls) > 0 {
-				log.Printf("Tool calls: %d\n", len(assistantMessage.ToolCalls))
-			}
-		}
-
 		// Check finish reason
 		if choice.FinishReason == "stop" {
 			// Agent has finished
-			if agent.configuration.Verbose {
-				log.Println("Agent finished successfully")
-			}
+			// Start dream update timer (10 seconds)
+			agent.dreamTimer = time.AfterFunc(10*time.Second, func() {
+				agent.updateDream(context.Background())
+			})
+			
 			return nil
 		}
 
 		// Handle tool calls
 		if choice.FinishReason == "tool_calls" && len(assistantMessage.ToolCalls) > 0 {
 			for _, toolCall := range assistantMessage.ToolCalls {
-				if agent.configuration.Verbose {
-					log.Printf("Executing tool: %s (ID: %s)\n", toolCall.Function.Name, toolCall.ID)
-					log.Printf("Arguments: %s\n", toolCall.Function.Arguments)
-				}
-
 				// Parse arguments
 				var arguments map[string]interface{}
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &arguments); err != nil {
@@ -219,13 +208,6 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 					// Return error to the model
 					result = fmt.Sprintf("Error executing tool: %s", err.Error())
 					errorMsg = err.Error()
-					if agent.configuration.Verbose {
-						log.Printf("Tool execution error: %s\n", err)
-					}
-				} else {
-					if agent.configuration.Verbose {
-						log.Printf("Tool result: %s\n", result)
-					}
 				}
 				
 				// Save tool execution to database
@@ -275,10 +257,7 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 			continue
 		}
 
-		// If we get here with another finish reason, log it
-		if agent.configuration.Verbose {
-			log.Printf("Unexpected finish reason: %s\n", choice.FinishReason)
-		}
+		// If we get here with another finish reason, something unexpected happened
 	}
 
 	return fmt.Errorf("agent exceeded maximum iterations (%d)", agent.configuration.MaxIterations)
@@ -314,14 +293,12 @@ func (agent *Agent) RunIteration(ctx context.Context, executor ToolExecutor) (st
 	var assistantMessageID int64
 	if agent.sessionID != "" && agent.database != nil {
 		dbMessage := &storage.Message{
-			SessionID:    agent.sessionID,
-			Role:         assistantMessage.Role,
-			Content:      assistantMessage.Content,
-			ToolCalls:    storage.MarshalToolCalls(assistantMessage.ToolCalls),
-			MessageIndex: agent.messageIndex,
-			CreatedAt:    time.Now(),
+			SessionID: agent.sessionID,
+			Role:      assistantMessage.Role,
+			Content:   assistantMessage.Content,
+			ToolCalls: storage.MarshalToolCalls(assistantMessage.ToolCalls),
+			CreatedAt: time.Now(),
 		}
-		agent.messageIndex++
 		
 		if err := agent.database.SaveMessage(dbMessage); err != nil {
 			log.Printf("Warning: failed to save assistant message: %v\n", err)
@@ -476,11 +453,8 @@ func (agent *Agent) LoadSession(sessionID string) error {
 	}
 
 	agent.sessionID = sessionID
-	agent.messageIndex = len(agent.messages)
-
-	if agent.configuration.Verbose {
-		log.Printf("Loaded session %s with %d messages\n", sessionID, len(agent.messages))
-	}
 
 	return nil
 }
+
+
