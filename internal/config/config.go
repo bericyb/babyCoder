@@ -31,7 +31,6 @@ type AgentConfiguration struct {
 // PromptsConfiguration holds prompt customization settings
 type PromptsConfiguration struct {
 	MainAgent string `json:"main_agent,omitempty"` // Custom main agent prompt (inline or file://path)
-	SubAgent  string `json:"sub_agent,omitempty"`  // Custom sub-agent prompt (inline or file://path)
 }
 
 // DefaultConfiguration returns a configuration with sensible defaults

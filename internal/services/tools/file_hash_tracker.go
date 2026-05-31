@@ -25,8 +25,8 @@ var ErrFileChangedSinceRead = errors.New("file contents have changed since it wa
 // were last read by the read_file tool. Edit tools consult this tracker
 // before mutating a file and refuse to proceed when the on-disk contents do
 // not match the recorded hash. The tracker is purely in-memory and is scoped
-// to a single ToolRegistry instance, which means each top-level session and
-// each sub-agent has its own isolated view.
+// to a single ToolRegistry instance, which means each top-level session has
+// its own isolated view.
 type FileHashTracker struct {
 	mutex  sync.RWMutex
 	hashes map[string]string

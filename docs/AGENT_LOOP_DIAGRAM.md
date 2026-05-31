@@ -1,7 +1,7 @@
 # babyCoder Agent Loop
 
 End-to-end flow of a prompt through babyCoder: initialization, the agent loop,
-tool execution, sub-agents, and the post-session dream/memory update.
+tool execution, and the post-session dream/memory update.
 
 ## Flow Diagram
 
@@ -20,7 +20,7 @@ flowchart TD
         OpenDB --> NewProv[Create AI Provider]
         NewProv --> NewSess[Create Session UUID]
         NewSess --> BuildPrompt[Build system prompt:<br/>main_agent + rules + dream.txt]
-        BuildPrompt --> RegTools[Register tools:<br/>read_file, write_file,<br/>line_edit, find_replace,<br/>list_files, bash_execute,<br/>get_project_structure,<br/>check_code_status, test_status,<br/>run_subagent]
+        BuildPrompt --> RegTools[Register tools:<br/>read_file, write_file,<br/>line_edit, find_replace,<br/>list_files, bash_execute,<br/>get_project_structure,<br/>check_code_status, test_status]
     end
 
     Init --> Input{Mode}
@@ -73,15 +73,6 @@ flowchart TD
     end
 
     DreamFlow --> Exit
-
-    %% Sub-agent branch
-    Exec -.->|tool=run_subagent| SubAgent
-    subgraph SubAgent [SubAgentTool]
-        direction TB
-        NewSub[AgentFactory creates<br/>child agent + own tool registry<br/>child sessionID with parent FK] --> SubLoop[Run sub-agent loop<br/>same Run mechanics]
-        SubLoop --> SubResult[Return final content<br/>as tool result string]
-    end
-    SubResult -.-> Track
 ```
 
 ## Key Points
@@ -91,9 +82,6 @@ flowchart TD
   if `stop`, exit.
 - **Persistence** happens at every step (assistant message, tool execution,
   tool response message) via `storage.Database`.
-- **Sub-agents** are spawned through the `run_subagent` tool using
-  `AgentFactory` (`main.go:171`), which builds a child `Agent` sharing
-  provider/db but with its own session row and tool registry.
 - **Dream memory** runs post-session (`internal/services/agent/dream.go:15`)
   via two LLM calls (summarize + decide-update) and persists to
   `.babycoder/dream.txt`, which is injected into the next session's system

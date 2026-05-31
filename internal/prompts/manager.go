@@ -13,9 +13,6 @@ type PromptType string
 const (
 	// MainAgent is the primary agent's system prompt
 	MainAgent PromptType = "main_agent"
-
-	// SubAgent is the research sub-agent's system prompt
-	SubAgent PromptType = "sub_agent"
 )
 
 // PromptManager handles loading and managing prompts
@@ -33,12 +30,11 @@ func NewPromptManager(projectRoot string) *PromptManager {
 }
 
 // NewPromptManagerFromConfig creates a prompt manager with config overrides pre-loaded
-func NewPromptManagerFromConfig(projectRoot string, mainAgentPrompt string, subAgentPrompt string) (*PromptManager, error) {
+func NewPromptManagerFromConfig(projectRoot string, mainAgentPrompt string) (*PromptManager, error) {
 	manager := NewPromptManager(projectRoot)
 
 	promptConfig := map[string]any{
 		"main_agent": mainAgentPrompt,
-		"sub_agent":  subAgentPrompt,
 	}
 
 	if err := manager.LoadFromConfig(promptConfig); err != nil {
@@ -101,11 +97,6 @@ func (pm *PromptManager) LoadFromConfig(config map[string]any) error {
 		pm.SetOverride(MainAgent, mainAgent)
 	}
 
-	// Load sub-agent prompt
-	if subAgent, ok := config["sub_agent"].(string); ok && subAgent != "" {
-		pm.SetOverride(SubAgent, subAgent)
-	}
-
 	return nil
 }
 
@@ -134,8 +125,6 @@ func (pm *PromptManager) getDefaultPrompt(promptType PromptType) string {
 	switch promptType {
 	case MainAgent:
 		return DefaultMainAgentPrompt
-	case SubAgent:
-		return DefaultSubAgentPrompt
 	default:
 		return ""
 	}

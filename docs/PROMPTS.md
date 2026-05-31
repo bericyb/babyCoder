@@ -13,15 +13,6 @@ You have access to various tools to analyze and modify code. When you need to us
 Always explain your reasoning before taking actions.
 ```
 
-### Sub-Agent Prompt
-```
-You are a research assistant. Investigate the given task using available tools and provide a clear summary of your findings.
-
-Task: {{task}}
-
-Provide a concise summary with key findings and relevant file references.
-```
-
 ## Customizing Prompts
 
 ### Option 1: Inline Override
@@ -31,8 +22,7 @@ Edit `.babycoder/babycoder.json`:
 ```json
 {
   "prompts": {
-    "main_agent": "You are a senior Go architect. Focus on enterprise patterns and best practices...",
-    "sub_agent": "You are a research assistant. Task: {{task}}\n\nBe thorough and include code examples."
+    "main_agent": "You are a senior Go architect. Focus on enterprise patterns and best practices..."
   }
 }
 ```
@@ -67,7 +57,8 @@ Reference in `.babycoder/babycoder.json`:
 
 ## Variable Substitution
 
-Sub-agent prompts support `{{task}}` placeholder which gets replaced with the actual research task.
+Prompts support `{{variable}}` placeholders via `RenderPrompt`, which performs
+simple string substitution against a caller-supplied map.
 
 ## Best Practices
 
@@ -106,8 +97,7 @@ Sub-agent prompts support `{{task}}` placeholder which gets replaced with the ac
 ```json
 {
   "prompts": {
-    "main_agent": "You are a backend Go developer specializing in microservices and Kubernetes deployments.",
-    "sub_agent": "Research the task: {{task}}\n\nFocus on production readiness and observability."
+    "main_agent": "You are a backend Go developer specializing in microservices and Kubernetes deployments."
   }
 }
 ```
@@ -123,17 +113,11 @@ pm := prompts.NewPromptManager("/project/root")
 // Load from config
 config := map[string]interface{}{
   "main_agent": "Custom prompt...",
-  "sub_agent": "file://./my-prompt.txt",
 }
 pm.LoadFromConfig(config)
 
 // Get prompt
 mainPrompt := pm.GetPrompt(prompts.MainAgent)
-
-// Render with variables
-subPrompt := pm.RenderPrompt(prompts.SubAgent, map[string]string{
-  "task": "Analyze authentication",
-})
 ```
 
 ## Files

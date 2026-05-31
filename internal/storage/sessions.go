@@ -9,8 +9,8 @@ import (
 // CreateSession creates a new session
 func (database *Database) CreateSession(session *Session) error {
 	query := `
-		INSERT INTO sessions (id, project_root, created_at, updated_at, title, status, parent_session_id, session_type, task_description)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO sessions (id, project_root, created_at, updated_at, title, status)
+		VALUES (?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := database.connection.Exec(
@@ -21,9 +21,6 @@ func (database *Database) CreateSession(session *Session) error {
 		session.UpdatedAt,
 		session.Title,
 		session.Status,
-		session.ParentSessionID,
-		session.SessionType,
-		session.TaskDescription,
 	)
 
 	return err
@@ -32,8 +29,8 @@ func (database *Database) CreateSession(session *Session) error {
 // GetSession retrieves a session by ID
 func (database *Database) GetSession(sessionID string) (*Session, error) {
 	query := `
-		SELECT id, project_root, created_at, updated_at, title, status, parent_session_id, session_type, task_description 
-		FROM sessions 
+		SELECT id, project_root, created_at, updated_at, title, status
+		FROM sessions
 		WHERE id = ?
 	`
 
@@ -45,9 +42,6 @@ func (database *Database) GetSession(sessionID string) (*Session, error) {
 		&session.UpdatedAt,
 		&session.Title,
 		&session.Status,
-		&session.ParentSessionID,
-		&session.SessionType,
-		&session.TaskDescription,
 	)
 
 	if err == sql.ErrNoRows {

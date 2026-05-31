@@ -18,15 +18,12 @@ type Database struct {
 
 // Session represents a conversation session
 type Session struct {
-	ID              string    `json:"id"`
-	ProjectRoot     string    `json:"project_root"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	Title           string    `json:"title"`
-	Status          string    `json:"status"`           // active, completed, failed
-	ParentSessionID *string   `json:"parent_session_id"` // NULL for primary sessions
-	SessionType     string    `json:"session_type"`      // 'primary' or 'subagent'
-	TaskDescription string    `json:"task_description"`  // What the sub-agent was asked to do
+	ID          string    `json:"id"`
+	ProjectRoot string    `json:"project_root"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Title       string    `json:"title"`
+	Status      string    `json:"status"` // active, completed, failed
 }
 
 // Message represents a single message in the conversation

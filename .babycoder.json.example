@@ -10,7 +10,6 @@
     "max_iterations": 100
   },
   "prompts": {
-    "main_agent": "",
-    "sub_agent": ""
+    "main_agent": ""
   }
 }

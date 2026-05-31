@@ -79,7 +79,6 @@ func New(sessionTitle string) (*State, error) {
 	promptManager, err := prompts.NewPromptManagerFromConfig(
 		workingDirectory,
 		configuration.Prompts.MainAgent,
-		configuration.Prompts.SubAgent,
 	)
 	if err != nil {
 		database.Close()
@@ -111,18 +110,6 @@ func New(sessionTitle string) (*State, error) {
 	toolExecutor := func(toolName string, arguments map[string]any) (string, error) {
 		return toolRegistry.Execute(toolName, arguments)
 	}
-
-	// Create and register sub-agent tool
-	agentFactory := createAgentFactory(provider, configuration, database, workingDirectory, codeAnalyzer, testRunner)
-	subAgentTool := &tools.SubAgentTool{
-		ProjectRoot:   workingDirectory,
-		ParentSession: sessionID,
-		Database:      database,
-		AgentFactory:  agentFactory,
-		PromptManager: promptManager,
-	}
-	toolRegistry.RegisterTool(subAgentTool)
-	codeAgent.RegisterTool(subAgentTool.GetDefinition())
 
 	// Attach a console listener so the user sees the model's reasoning,
 	// assistant content, and tool invocations in real time between
@@ -192,11 +179,25 @@ func (state *State) RunInteractive() {
 			continue
 		}
 
-		if rule, ok := strings.CutPrefix(input, "#"); ok {
+		// Check for special commands first
+		if input == "/exit" {
+			fmt.Println("\nGoodbye!")
+			return
+		}
+
+		// Check for rules starting with '/' (replacing the old '#' logic)
+		if rule, ok := strings.CutPrefix(input, "/"); ok {
 			if rule == "" {
 				fmt.Println("⚠ Rule cannot be empty")
 				continue
 			}
+			// Prevent adding a rule if it's another known command (like /help or /status)
+			// This is a heuristic based on the assumption that other slash commands exist.
+			if strings.HasPrefix(rule, "exit") || strings.HasPrefix(rule, "help") { 
+				fmt.Printf("⚠ '%s' is a reserved command and cannot be added as a rule.\n", rule)
+				continue
+			}
+
 			if err := state.rulesManager.AddRule(rule); err != nil {
 				fmt.Printf("⚠ Failed to add rule: %v\n\n", err)
 			} else {
@@ -245,47 +246,18 @@ func (state *State) RunNonInteractive(prompt string) error {
 	return nil
 }
 
-// createAgentFactory returns a factory function for creating sub-agents. The
-// factory is handed to the sub-agent tool so each sub-agent invocation gets
-// its own agent.Agent, tool registry, and tool executor bound to a fresh
-// session ID.
-func createAgentFactory(
-	provider ai_provider.Provider,
-	configuration *config.Configuration,
-	database *storage.Database,
-	workingDirectory string,
-	codeAnalyzer *analyzer.Analyzer,
-	testRunner *testrunner.TestRunner,
-) tools.AgentFactory {
-	return func(subSessionID string) (tools.AgentInterface, agent.ToolExecutor, error) {
-		subAgent := agent.NewAgent(provider, &configuration.Agent, database, workingDirectory)
-		subAgent.SetSessionID(subSessionID)
-		subToolRegistry := tools.NewToolRegistry(workingDirectory, subSessionID, codeAnalyzer, testRunner, database)
-		for _, toolDef := range subToolRegistry.GetAllDefinitions() {
-			subAgent.RegisterTool(toolDef)
-		}
-		subToolExecutor := func(toolName string, arguments map[string]any) (string, error) {
-			return subToolRegistry.Execute(toolName, arguments)
-		}
-		return subAgent, subToolExecutor, nil
-	}
-}
-
 // createNewSession inserts a new primary session row and returns its ID. A
 // failure here is logged but non-fatal: the run can still proceed without
 // persisted history.
 func createNewSession(database *storage.Database, projectRoot string, title string) string {
 	sessionID := uuid.New().String()
 	session := &storage.Session{
-		ID:              sessionID,
-		ProjectRoot:     projectRoot,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		Title:           title,
-		Status:          "active",
-		ParentSessionID: nil,
-		SessionType:     "primary",
-		TaskDescription: "",
+		ID:          sessionID,
+		ProjectRoot: projectRoot,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Title:       title,
+		Status:      "active",
 	}
 
 	if err := database.CreateSession(session); err != nil {
