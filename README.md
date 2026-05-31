@@ -247,17 +247,11 @@ Simply run babyCoder with no arguments to start an interactive session:
 Model:    local-model
 Endpoint: http://127.0.0.1:1234/v1
 
-Type your message and press Enter to send.
-Type /exit to quit.
-Type /new to start a new session.
-
 You: Hello! I need help implementing a feature in this project.
 ```
 
 **Interactive Commands:**
 - `/exit` - Save session and quit
-- `/new` - Start a fresh session
-- `/help` - Show available commands
 
 ### Session Management
 

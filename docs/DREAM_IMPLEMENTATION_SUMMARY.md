@@ -26,7 +26,6 @@ A minimal, automatic project memory system that maintains agent context across s
 - Added dream file loading on session start
 - Injected dream into system prompt as "PROJECT CONTEXT"
 - Added `💭 Project memory loaded` user indicator
-- Re-inject dream on `/new` command
 
 ### New Files
 

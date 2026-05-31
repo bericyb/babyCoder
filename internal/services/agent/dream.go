@@ -87,21 +87,22 @@ func (agent *Agent) decideDreamUpdate(ctx context.Context, currentDream, session
 		currentDream = "No project summary yet."
 	}
 	
-	prompt := fmt.Sprintf(`Current project summary:
----
+	prompt := fmt.Sprintf(`You are an expert technical writer tasked with maintaining a high-level, persistent summary of a coding project's context. Your goal is to synthesize the new session information into the existing 'Project Context' without losing any critical facts from the old context.
+
+--- PROJECT CONTEXT (MUST RETAIN ALL FACTS) ---
 %s
----
+----------------------------------------------
 
-Recent session summary:
----
+--- NEW SESSION ACTIVITY SUMMARY ---
 %s
----
+----------------------------------------------
 
-If this session adds important context about the project, output an updated 1-2 paragraph summary.
-If no update needed, output exactly: NO_UPDATE
-
-Output only the result.`, currentDream, sessionSummary)
-	
+Instructions:
+1. Review the "NEW SESSION ACTIVITY SUMMARY" against the "PROJECT CONTEXT".
+2. If the new activity introduces a major feature, architectural decision, or critical piece of knowledge not covered in the context, integrate it into the existing summary naturally.
+3. Do NOT simply summarize the session; *update* the project narrative. Maintain the tone and scope of the original context.
+4. If the new activity is minor (e.g., fixing a typo, adding boilerplate code), output exactly: NO_UPDATE.
+5. Output only the final, integrated Project Context text. Do not include any introductory or concluding remarks.`, currentDream, sessionSummary)
 	request := ai_provider.ChatCompletionRequest{
 		Messages: []ai_provider.Message{{Role: "user", Content: prompt}},
 	}

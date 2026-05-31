@@ -72,7 +72,6 @@ Project Rules:
 ### Automatic Loading
 
 - Rules are loaded on agent startup
-- Rules are reloaded when you use `/new` to start a new session
 - Changes to `rules.md` take effect in new sessions
 
 ## Use Cases
@@ -228,7 +227,6 @@ text, err := rm.GetRulesAsText()
 **Integration:**
 - Rules are loaded in `main.go` → `runInteractive()`
 - Injected after main prompt, before tool descriptions
-- Reloaded on `/new` command
 
 ## See Also
 

@@ -18,9 +18,6 @@ You'll see a welcome screen:
 Model:    local-model
 Endpoint: http://127.0.0.1:1234/v1
 
-Type your message and press Enter to send.
-Type /exit to quit.
-Type /new to start a new session.
 ```
 
 ## Interactive Commands
@@ -42,8 +39,6 @@ You: Can you give me an example?
 ### Available Commands
 
 - `/exit` - Exit babyCoder and save the session
-- `/new` - Start a new session (completes current session)
-- `/help` - Show available commands
 
 ## Example Session
 
