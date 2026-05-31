@@ -56,7 +56,7 @@ Current rules (/path/to/project/rules.md):
 When the agent starts, rules are injected into the system prompt:
 
 ```
-You are a helpful coding assistant specializing in Golang development.
+You are a helpful coding assistant.
 
 You have access to various tools to analyze and modify code. When you need to use a tool, call it with the appropriate parameters.
 

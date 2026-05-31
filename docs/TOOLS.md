@@ -1,11 +1,11 @@
 # Tools Service - Complete Agent Toolkit
 
-The tools service provides file manipulation, Go code analysis, test execution, automated documentation, and bash command execution to the AI agent. All analysis and testing happens passively in the background, similar to an IDE.
+The tools service provides file manipulation, code analysis, test execution, automated documentation, and bash command execution to the AI agent. All analysis and testing happens passively in the background, similar to an IDE.
 
 ## Tool Categories
 
 1. **File Operations** - Direct file manipulation (read, write, edit, list)
-2. **Code Analysis** - Passive background analysis and active queries (Go-specific)
+2. **Code Analysis** - Passive background analysis and active queries (language-agnostic)
 3. **Test Execution** - Automatic test running with pass/fail tracking
 4. **Documentation** - Automatic doc updates via LLM when code changes
 5. **Bash Execution** - Synchronous command execution with output capture
@@ -20,58 +20,24 @@ All tools enforce **project root containment** - files can only be accessed with
 
 ### 1. read_file
 
-Read the complete contents of a file, optionally with documentation summary for Go files.
+Read the contents of a file in the project.
 
 **Parameters:**
 - `file_path` (string, required): Path to file (relative to project root or absolute within project)
-- `include_documentation` (boolean, optional): For Go files, prepend a summary of functions, structs, and interfaces (default: false)
 
-**Returns:** File contents as a string, optionally with documentation header
+**Returns:** File contents as a string
 
-**Example (basic):**
+**Example:**
 ```json
 {
   "file_path": "main.go"
 }
 ```
 
-**Example (with documentation):**
-```json
-{
-  "file_path": "internal/services/agent/agent.go",
-  "include_documentation": true
-}
-```
-
-**Output (with documentation):**
-```
-=== DOCUMENTATION SUMMARY ===
-
-Package: agent
-
-Functions: 5
-  • NewAgent - Line 58
-  • (Agent) Run - Line 67
-  • (Agent) RegisterTool - Line 89
-
-Structs: 2
-  • Agent (4 fields) - Line 23
-  • Message (3 fields) - Line 31
-
-Interfaces: 1
-  • AIProvider (2 methods) - Line 45
-
-=== FILE CONTENTS ===
-
-package agent
-...
-```
-
 **Use Cases:**
 - Examine existing code before making changes
-- Get instant context about what a file does
-- Understand code structure without parsing manually
 - Read configuration files
+- Inspect any text file inside the project root
 
 ---
 
@@ -79,7 +45,7 @@ package agent
 
 Write content to a file, creating it if it doesn't exist, overwriting if it does.
 
-**Passive Triggers (for .go files):**
+**Passive Triggers:**
 - Code analysis re-runs
 - Tests re-run (debounced 2s)
 - Documentation hash check (auto-updates if stale)
@@ -128,8 +94,8 @@ List files in a directory with optional glob pattern matching and recursive sear
 ```
 
 **Glob Patterns:**
-- `*.go` - All Go files
-- `test_*.go` - Files starting with "test_"
+- `*.py` - All Python files
+- `test_*.py` - Files starting with "test_"
 - `*_test.go` - Files ending with "_test.go"
 
 **Use Cases:**
@@ -143,7 +109,7 @@ List files in a directory with optional glob pattern matching and recursive sear
 
 Edit specific lines in a file by line number (1-indexed, inclusive).
 
-**Passive Triggers (for .go files):**
+**Passive Triggers:**
 - Code analysis re-runs
 - Tests re-run (debounced 2s)
 - Documentation hash check (auto-updates if stale)
@@ -184,7 +150,7 @@ Edit specific lines in a file by line number (1-indexed, inclusive).
 
 Find exact text matches and replace them in a file.
 
-**Passive Triggers (for .go files):**
+**Passive Triggers:**
 - Code analysis re-runs
 - Tests re-run (debounced 2s)
 - Documentation hash check (auto-updates if stale)
@@ -220,7 +186,7 @@ Find exact text matches and replace them in a file.
 
 ---
 
-## Part 2: Code Analysis Tools (Go-Specific)
+## Part 2: Code Analysis Tools
 
 babyCoder includes **passive background analysis** similar to an IDE's language server. The analyzer runs automatically after file edits and provides active tools for querying code status.
 
@@ -228,26 +194,28 @@ babyCoder includes **passive background analysis** similar to an IDE's language 
 
 1. **Passive Analysis (Background):**
    - Runs automatically on startup
-   - Re-runs asynchronously after any `.go` file is modified
-   - Parses all Go files in the project using `go/parser` and `go/ast`
-   - Executes `go build` to find compile errors
-   - Executes `go vet` to find potential issues
+   - Re-runs asynchronously after any file is modified
+   - Executes a user-supplied `build_command` shell command (for example
+     `cargo check`, `npm run build`, `tsc --noEmit`,
+     `pytest --collect-only`, or `go build ./...`)
+   - Captures stdout, stderr, and the exit code
+   - Uses the AI provider to summarize the raw output into a strict JSON
+     pass/fail report with per-file diagnostics
    - Results stored in memory for instant querying
 
 2. **Active Tools (On-Demand):**
    - Agent can query current code status anytime
    - Fresh analysis runs if needed
    - Get diagnostics for specific files
-   - View package structure and outlines
 
 ---
 
 ### 6. check_code_status
 
-Get a summary of all errors, warnings, and issues in the Go project.
+Get a summary of all errors, warnings, and issues in the project.
 
 **Parameters:**
-- `include_warnings` (boolean, optional): Include `go vet` warnings (default: true)
+- `include_warnings` (boolean, optional): Include warning-level diagnostics (default: true)
 - `max_diagnostics` (integer, optional): Max diagnostics per severity level (default: 20)
 
 **Returns:** Formatted report with errors and warnings
@@ -262,26 +230,30 @@ Get a summary of all errors, warnings, and issues in the Go project.
 
 **Output Format:**
 ```
-=== Go Project Code Status ===
+=== Project Code Status ===
 
 Summary: 2 error(s), 1 warning(s), 0 other issue(s)
 
 === ERRORS ===
 
 internal/services/agent/agent.go:45:12
-  [go build] undefined: nonExistentFunc
+  [build] undefined: nonExistentFunc
 
 main.go:102:5
-  [parser] expected ')', found 'EOF'
+  [build] expected ')', found 'EOF'
 
 === WARNINGS ===
 
 internal/storage/database.go:234:2
-  [go vet] this value of err is never used
+  [build] this value of err is never used
 ```
 
+Each diagnostic carries `file_path`, `line`, `column`, `severity`,
+`message`, and `source` fields, as extracted by the AI provider from
+the raw build output.
+
 **Use Cases:**
-- Check if project compiles before committing
+- Check if project builds before committing
 - See all issues at a glance after making changes
 - Verify fixes resolved errors
 
@@ -289,10 +261,10 @@ internal/storage/database.go:234:2
 
 ### 7. get_file_diagnostics
 
-Get detailed diagnostics for a specific Go file.
+Get detailed diagnostics for a specific file.
 
 **Parameters:**
-- `file_path` (string, required): Relative path to the Go file
+- `file_path` (string, required): Relative path to the file
 
 **Returns:** All diagnostics for that file with line/column info
 
@@ -310,15 +282,15 @@ Get detailed diagnostics for a specific Go file.
 Total issues: 3
 
 ✗ Line 45, Column 12 [error]
-  Source: go build
+  Source: build
   undefined: nonExistentFunc
 
 ⚠ Line 67, Column 2 [warning]
-  Source: go vet
+  Source: build
   this value of err is never used
 
 ✗ Line 89, Column 15 [error]
-  Source: parser
+  Source: build
   expected '}', found 'EOF'
 ```
 
@@ -329,155 +301,37 @@ Total issues: 3
 
 ---
 
-### 8. get_package_outline
+### 8. get_project_structure
 
-Get the structure of a Go file including functions, structs, interfaces, and imports.
+Walk the project file tree language-agnostically and display its
+directory and file structure. This tool no longer parses ASTs or knows
+anything about packages — it operates purely on the filesystem.
+
+Noise directories are skipped automatically: `.git`, `node_modules`,
+`vendor`, `target`, `dist`, `build`, `__pycache__`, common virtual
+environment folders (`.venv`, `venv`, `env`), and IDE folders
+(`.idea`, `.vscode`).
 
 **Parameters:**
-- `file_path` (string, required): Relative path to the Go file
+- `max_depth` (number, optional): Maximum directory depth to traverse (default: 5)
+- `include_hidden` (boolean, optional): Include dotfiles and dot-directories (default: false)
+- `max_entries` (number, optional): Maximum total entries to report before truncating (default: 500)
 
-**Returns:** Complete outline with declarations and signatures
+**Returns:** A formatted tree of directories and files
 
 **Example:**
 ```json
 {
-  "file_path": "internal/services/agent/agent.go"
-}
-```
-
-**Output Format:**
-```
-=== Package Outline: agent ===
-
-File: internal/services/agent/agent.go
-
---- IMPORTS ---
-  context
-  fmt
-  github.com/exar/babycoder/internal/config
-
---- STRUCTS ---
-
-type Agent struct (Line 23)
-  configuration *config.AgentConfiguration
-  provider AIProvider
-  messages []Message
-  sessionID string
-
-type Message struct (Line 31)
-  Role string
-  Content string
-  ToolCalls []ToolCall
-
---- INTERFACES ---
-
-type AIProvider interface (Line 45)
-  SendMessage(ctx context.Context, messages []Message) (Response, error)
-
---- FUNCTIONS & METHODS ---
-
-func NewAgent(provider AIProvider, config *config.AgentConfiguration) *Agent // Line 58
-
-func (agent *Agent) Run(ctx context.Context, input string) error // Line 67
-
-func (agent *Agent) RegisterTool(tool Tool) // Line 89
-
---- JSON REPRESENTATION ---
-{
-  "package_name": "agent",
-  "file_path": "internal/services/agent/agent.go",
-  "functions": [...],
-  "structs": [...],
-  ...
+  "max_depth": 5,
+  "include_hidden": false,
+  "max_entries": 500
 }
 ```
 
 **Use Cases:**
-- Understand code structure before editing
-- Find function signatures and line numbers
-- See all methods on a struct
-- Discover interfaces and their contracts
-
----
-
-### 9. get_project_structure
-
-Analyze and display the entire Go project structure, showing all packages, their exported types/functions, file counts, and organization. Perfect for understanding the codebase architecture at a glance.
-
-**Parameters:**
-- `include_imports` (boolean, optional): Include imported packages for each package (default: false, can be verbose)
-- `include_exports` (boolean, optional): Include exported types and functions for each package (default: true)
-- `max_depth` (number, optional): Maximum directory depth to analyze (default: 10)
-
-**Returns:** Complete project structure with package hierarchy and statistics
-
-**Example:**
-```json
-{
-  "include_imports": false,
-  "include_exports": true,
-  "max_depth": 10
-}
-```
-
-**Output Format:**
-```
-# Go Project Structure
-
-**Project Root:** /Users/exar/Projects/babyCoder
-**Total Packages:** 13
-
-## Package Hierarchy
-
-📦 **main** (`.`)
-   Files: 2 | Lines: ~640
-
-  📦 **config** (`internal/config`)
-     Files: 1 | Lines: ~113
-     Types: AIProviderConfiguration (struct), AgentConfiguration (struct), Configuration (struct)
-     Functions: DefaultConfiguration, LoadConfiguration, SaveConfiguration
-
-  📦 **storage** (`internal/storage`)
-     Files: 2 | Lines: ~998
-     Types: Database (struct), Session (struct), Message (struct)
-     Functions: (*Database) CreateSession, (*Database) GetSession, ...
-
-    📦 **agent** (`internal/services/agent`)
-       Files: 1 | Lines: ~336
-       Types: Agent (struct), ToolExecutor
-       Functions: (*Agent) Run, (*Agent) RegisterTool, ...
-
-    📦 **tools** (`internal/services/tools`)
-       Files: 12 | Lines: ~2453
-       Types: BashExecuteTool (struct), ReadFileTool (struct), ...
-       Functions: (*BashExecuteTool) Execute, ...
-
-## Summary
-
-- **Total Go Files:** 28
-- **Total Lines:** ~6782
-- **Exported Types:** 65
-- **Exported Functions:** 141
-```
-
-**Use Cases:**
-- Get a bird's eye view of the entire project
-- Understand package organization and hierarchy
-- See all exported APIs at a glance
-- Quickly locate packages by functionality
-- Understand project size and complexity
-- Generate architectural documentation
-- Onboard new developers to the codebase
-
-**What It Shows:**
-- **Package Hierarchy:** Nested structure showing parent/child relationships
-- **File Counts:** Number of .go files per package (excluding tests)
-- **Line Counts:** Approximate total lines of code
-- **Exported Types:** Structs and interfaces with type annotations
-- **Exported Functions:** All public functions and methods
-- **Summary Statistics:** Totals across entire project
-
-**Note:** Excludes test files (_test.go) for cleaner output focused on production code structure.
+- Get a bird's eye view of the project layout
+- Quickly locate where files live
+- Onboard to an unfamiliar codebase
 
 ---
 
@@ -492,7 +346,11 @@ babyCoder includes **automatic test execution** similar to an IDE's test runner.
    - **Triggered after agent completes all tool calls** (not time-based)
    - File edits mark tests as "dirty" via `MarkDirty()`
    - Tests run once when agent finishes its turn
-   - Parses `go test -json` output for detailed results
+   - Executes a user-supplied `test_command` shell command (for example
+     `pytest`, `npm test`, `cargo test`, `mvn test`, or `go test ./...`)
+   - Captures stdout, stderr, and the exit code
+   - Uses the AI provider to extract a pass/fail summary plus the
+     per-test failure details from the raw output
    - Results cached in memory for instant querying
 
 2. **Active Tools (On-Demand):**
@@ -734,18 +592,20 @@ The documentation system is **fully passive** - there are no tools to call. The 
 ### What Gets Analyzed/Tested
 
 **Code Analysis:**
-- Parses every `.go` file in project (excludes `vendor/` and hidden dirs)
-- Builds AST for each file
-- Extracts functions, structs, interfaces, imports
-- Runs `go build ./...` for compile errors
-- Runs `go vet ./...` for warnings
+- Runs the user-supplied `build_command` (for example `cargo check`,
+  `npm run build`, `tsc --noEmit`, or `go build ./...`)
+- Captures stdout, stderr, and the exit code
+- Uses the AI provider to extract structured pass/fail diagnostics
+  (file, line, column, severity, message, source) from the raw output
 
 **Test Execution:**
-- Runs `go test -json ./...`
+- Runs the user-supplied `test_command` (for example `pytest`,
+  `npm test`, `cargo test`, `mvn test`, or `go test ./...`)
 - Triggered when agent completes all tool calls
-- Only runs if Go files were modified (dirty flag)
-- Parses detailed results per test
-- Tracks pass/fail/skip status
+- Runs whenever the dirty flag is set (any file edit sets it; the
+  command from the last invocation is reused on the next run)
+- AI provider extracts pass/fail counts and per-test failure details
+  from the captured output
 - Captures failure output and timing
 
 **Documentation Tracking:**
@@ -825,14 +685,14 @@ go test ./internal/services/doctracker -v
 **Code Analysis (3 tools):**
 6. `check_code_status` - Project-wide error/warning summary
 7. `get_file_diagnostics` - Per-file detailed diagnostics
-8. `get_package_outline` - File structure and declarations
+8. `get_project_structure` - Walk the project file tree
 
 **Test Execution (3 tools):**
 9. `get_test_status` - Quick pass/fail summary
 10. `get_failing_tests` - Detailed failure information
 11. `run_tests` - Force immediate test run
 
-**Total: 11 tools available to the agent**
+**Total: 10 tools available to the agent**
 
 **Passive Systems (no tools needed):**
 - Automatic documentation updates via LLM workers
@@ -859,7 +719,7 @@ Agent: "Add an 'input' parameter to the Run function"
 [Agent finishes all tool calls]
 
 [Now - synchronous]:
-  • Tests execute: go test -json ./... (1-3s)
+  • Tests execute: (your configured test command, e.g. `pytest`, `npm test`) (1-3s)
   • Results parsed and cached
 
 [Background - async]:
@@ -918,7 +778,7 @@ Execute a bash command synchronously and return its output. Use for quick comman
 - Commands that require TTY allocation
 
 **Parameters:**
-- `command` (string, required): The bash command to execute (e.g., 'ls -la', 'go test ./...', 'curl http://localhost:8080')
+- `command` (string, required): The bash command to execute (e.g., 'ls -la', 'pytest', 'npm test', 'curl http://localhost:8080')
 - `working_dir` (string, optional): Working directory (relative to project root or absolute). Defaults to project root.
 - `timeout_seconds` (number, optional): Timeout in seconds (default: 30, max: 300)
 
@@ -934,7 +794,7 @@ Execute a bash command synchronously and return its output. Use for quick comman
 **Example (with directory and timeout):**
 ```json
 {
-  "command": "go test -v ./internal/services/...",
+  "command": "pytest -v tests/services",
   "working_dir": ".",
   "timeout_seconds": 60
 }
@@ -950,12 +810,12 @@ Execute a bash command synchronously and return its output. Use for quick comman
 
 **Use Cases:**
 - Run tests with custom flags
-- Check build status (`go build ./...`)
+- Check build status (e.g. `cargo check`, `npm run build`, `tsc --noEmit`)
 - Query APIs with curl
 - Run git commands (`git status`, `git diff`)
 - Execute custom scripts
-- Check dependencies (`go mod tidy`, `go mod verify`)
-- Run linters/formatters (`gofmt`, `golint`)
+- Check dependencies (e.g. `npm install`, `pip check`, `cargo check`)
+- Run linters/formatters (e.g. `prettier`, `ruff`, `eslint`, `gofmt`)
 - System information (`ps aux | grep go`, `df -h`)
 
 **Output Format:**
@@ -1192,90 +1052,34 @@ Restart a background process. The process will be stopped and started again with
 
 ---
 
-### 18. hot_reload_go
-
-Start hot-reloading a Go application using Air. The app will automatically rebuild and restart when Go files change.
-
-**Requires Air:** `go install github.com/air-verse/air@latest`
-
-**Parameters:**
-- `id` (string, required): Unique identifier for this hot reload instance (e.g., 'api', 'webapp', 'myapp')
-- `action` (string, required): Action to perform: 'start', 'stop', 'status', or 'logs'
-- `working_dir` (string, optional): Directory containing the Go app (relative to project root or absolute). Only used with action='start'.
-- `air_config` (string, optional): Path to .air.toml config file. Only used with action='start'.
-- `lines` (number, optional): Number of log lines to retrieve. Only used with action='logs'.
-
-**Returns:** Status message and logs (for start/logs actions)
-
-**Example (start):**
-```json
-{
-  "id": "api",
-  "action": "start",
-  "working_dir": ".",
-  "air_config": ".air.toml"
-}
-```
-
-**Example (view logs):**
-```json
-{
-  "id": "api",
-  "action": "logs",
-  "lines": 50
-}
-```
-
-**Example (stop):**
-```json
-{
-  "id": "api",
-  "action": "stop"
-}
-```
-
-**Use Cases:**
-- Develop a web server with automatic restart
-- Test API changes without manual restart
-- Watch for compilation errors in real-time
-- Rapid iteration on Go applications
-
-**How it works:**
-1. Air watches for .go file changes
-2. Automatically runs `go build`
-3. Kills old process and starts new one
-4. Logs build output and application output
-5. Continues watching for changes
-
-**Configuration:**
-Air uses sensible defaults, but you can customize with .air.toml:
-- Build command
-- File patterns to watch
-- Exclude patterns
-- Build delay
-- Kill timeout
-
----
-
 ## Complete Workflow Examples
 
-### Example 1: Web Server Development
+### Example 1: Web Server Development with Hot Reload
+
+Use a language-appropriate watcher under `process_start` (e.g. `air` for
+Go, `nodemon` for Node.js, `cargo watch` for Rust, `watchexec` for
+anything).
 
 ```
-1. Start hot reload:
-   hot_reload_go(id='api', action='start')
+1. Start the watcher as a managed process:
+   process_start(
+     process_id='api',
+     name='API Hot Reload',
+     command='watchexec',
+     args=['-r', '-e', 'py', '--', 'python', 'app.py']
+   )
 
-2. Make code changes to your Go files
-   (Air automatically rebuilds and restarts)
+2. Make code changes
+   (the watcher rebuilds and restarts automatically)
 
 3. Check logs:
-   hot_reload_go(id='api', action='logs', lines=50)
+   process_logs(process_id='api', lines=50)
 
 4. Test endpoints:
    bash_execute(command='curl http://localhost:8080/health')
 
 5. When done:
-   hot_reload_go(id='api', action='stop')
+   process_stop(process_id='api')
 ```
 
 ### Example 2: Background Worker
@@ -1487,12 +1291,11 @@ Agent calls: run_subagent(
 )
 
 Sub-agent:
-1. Uses get_project_structure to map packages
+1. Uses get_project_structure to map the project layout
 2. Uses read_file to examine key files
-3. Uses get_package_outline to understand interfaces
-4. Uses list_files to find all pipeline components
-5. Uses get_file_diagnostics to check for issues
-6. Synthesizes findings into executive summary
+3. Uses list_files to find all pipeline components
+4. Uses get_file_diagnostics to check for issues
+5. Synthesizes findings into executive summary
 
 Sub-agent returns summary (not 20 iterations of tool calls!)
 
@@ -1534,11 +1337,11 @@ GROUP BY tool_name;
 ## Tool Count Summary
 
 - **File Operations:** 5 tools (read_file, write_file, list_files, line_edit_file, find_and_replace_edit_file)
-- **Code Analysis:** 4 tools (check_code_status, get_file_diagnostics, get_package_outline, get_project_structure)
+- **Code Analysis:** 3 tools (check_code_status, get_file_diagnostics, get_project_structure)
 - **Test Execution:** 3 tools (get_test_status, get_failing_tests, run_tests)
-- **Bash/Process Management:** 7 tools (bash_execute, process_start, process_status, process_logs, process_stop, process_restart, hot_reload_go)
+- **Bash/Process Management:** 6 tools (bash_execute, process_start, process_status, process_logs, process_stop, process_restart)
 - **Context Management:** 1 tool (run_subagent)
-- **Total Active Tools:** 20
+- **Total Active Tools:** 18
 - **Passive Systems:** 3 (code analyzer, test runner, doc tracker)
 
 ---

@@ -128,7 +128,7 @@ Tool result: Successfully wrote 85 bytes to hello.go
 
 **List files:**
 ```
-You: Show me all Go files in the internal directory
+You: Show me all source files in the internal directory
 
 Agent: [calls list_files tool with pattern="*.go", recursive=true]
 Tool result: Found 15 files:
@@ -153,13 +153,16 @@ With basic file operations complete, babyCoder can now:
 3. ✅ Modify existing files
 4. ✅ Discover project structure
 
-**Priority 2** would add Golang-specific capabilities:
-- Parse Go files (AST)
-- Extract functions/structs
-- List symbols
-- Type-aware editing
+**Priority 2** would add deeper code analysis capabilities:
+- Language-agnostic build and test integration
+- Pass/fail diagnostics extracted from raw tool output
+- Cross-language project structure walking
 
-These require integration with `go/parser` and `go/ast` from the standard library.
+The analyzer now runs a user-supplied build command (for example
+`cargo check`, `npm run build`, `tsc --noEmit`, `pytest --collect-only`, or
+`go build ./...`) and uses the AI provider to summarize the captured
+stdout/stderr into a strict JSON pass/fail report with per-file
+diagnostics. No language-specific AST parsing is performed.
 
 ## Performance Notes
 
@@ -191,7 +194,7 @@ Try it:
 ```bash
 ./babyCoder
 
-You: List all the Go files in this project
+You: List all the source files in this project
 You: Read the main.go file
 You: Create a new helper function in a file called utils.go
 ```

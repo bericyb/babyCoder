@@ -30,7 +30,7 @@ Type /new to start a new session.
 Simply type your message and press Enter:
 
 ```
-You: Hello! Can you help me understand Golang interfaces?
+You: Hello! Can you help me refactor this function?
 ```
 
 The agent will process your request and respond. Once complete, you can continue the conversation:

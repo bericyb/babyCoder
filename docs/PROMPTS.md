@@ -6,7 +6,7 @@ babyCoder uses a simple, centralized prompt system that's easy to customize.
 
 ### Main Agent Prompt
 ```
-You are a helpful coding assistant specializing in Golang development.
+You are a helpful coding assistant.
 
 You have access to various tools to analyze and modify code. When you need to use a tool, call it with the appropriate parameters.
 
@@ -41,7 +41,7 @@ Edit `.babycoder/babycoder.json`:
 
 Create `prompts/main_agent.txt`:
 ```
-You are a helpful coding assistant specializing in Golang.
+You are a helpful coding assistant.
 
 Company Standards:
 - Follow internal/docs/STYLE_GUIDE.md

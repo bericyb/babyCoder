@@ -55,7 +55,7 @@ These tools give models exactly the context they need, nothing more, nothing les
 
 ### 3. Deep LSP Integration
 
-babyCoder leverages the Golang Language Server Protocol (gopls) for intelligent code awareness:
+babyCoder leverages the Language Server Protocol (LSP) for intelligent code awareness:
 
 - **Type Information**: Query the type of any expression or variable
 - **Symbol Navigation**: Jump to definitions, find implementations, locate references
@@ -65,13 +65,13 @@ babyCoder leverages the Golang Language Server Protocol (gopls) for intelligent 
 
 ### 4. Static Analysis Tooling
 
-Integration with Golang's powerful static analysis tools:
+Integration with language-agnostic static analysis tooling:
 
-- **go vet**: Detect suspicious constructs and common mistakes
-- **staticcheck**: Advanced linting with hundreds of checks
-- **Type Checker**: Validate type correctness without full compilation
-- **Import Analysis**: Verify and organize imports automatically
-- **Dead Code Detection**: Identify unused functions, variables, and types
+- **Linter/Static Analyzer**: Detect suspicious constructs and common mistakes across the language ecosystem.
+- **Advanced Linting**: Perform deep code quality checks with hundreds of rules.
+- **Type Checker**: Validate type correctness without full compilation.
+- **Dependency Analysis**: Verify and organize imports automatically.
+- **Dead Code Detection**: Identify unused functions, variables, and types.
 
 ### 5. Tool Calling Robustness
 
@@ -158,11 +158,11 @@ babyCoder/
 ## Technology Stack
 
 ### Backend
-- **Language**: [Target Language] (Self-hosted/Tooling specific)
+- **Language**: Target Language (Supports multiple languages via plugins/tooling)
 - **Database**: SQLite with foreign key constraints (single-file, zero-config)
 - **Logging**: File-based with automatic rotation and cleanup
 - **LSP Client**: Integration with Language Server Protocol (LSP) client (Language-agnostic)
-- **Parser**: `go/ast`, `go/parser`, `go/types` (planned)
+- **Analyzer**: Runs user-supplied build/lint commands and uses the AI provider to summarize raw output into structured pass/fail diagnostics. Language-agnostic.
 
 ### AI Provider Integration
 - **Primary**: LMStudio (OpenAI-compatible API)
@@ -170,6 +170,12 @@ babyCoder/
 - **API Providers**: OpenAI, Anthropic (planned)
 - **Protocol**: OpenAI chat completions with tool calling
 
+### Storage & Persistence
+- **Database**: SQLite with sessions, messages, and tool_executions tables
+- **Migrations**: Migration framework (e.g., goose) for versioned schema management.
+- **Logging**: Timestamped files in `.babycoder/logs/` with 7-day retention
+- **Configuration**: JSON-based (`.babycoder/babycoder.json`)
+- **Session Management**: UUID-based sessions with full audit trail
 ### Storage & Persistence
 - **Database**: SQLite with sessions, messages, and tool_executions tables
 - **Migrations**: [goose](https://github.com/pressly/goose) with embedded SQL files (see [Database Migrations](#database-migrations))
@@ -207,7 +213,6 @@ babyCoder/
 
 - `validate_syntax`: Check if code parses correctly
 - `validate_types`: Run type checker on a file or package
-- `run_vet`: Execute `go vet` and return issues
 - `run_staticcheck`: Run staticcheck linter
 
 ## Design Principles
@@ -246,7 +251,7 @@ Type your message and press Enter to send.
 Type /exit to quit.
 Type /new to start a new session.
 
-You: Hello! Can you help me with Golang?
+You: Hello! I need help implementing a feature in this project.
 ```
 
 **Interactive Commands:**
@@ -317,22 +322,27 @@ All logs are automatically written to `.babycoder/logs/` directory:
 
 Logs older than 7 days are automatically cleaned up. The CLI output remains clean and user-friendly.
 
-## Testing
+## 🧪 Automated Regression Detection (Feature)
 
+A core pillar of babyCoder is its commitment to code reliability. To prevent regressions and ensure every change maintains project integrity, babyCoder automatically runs a comprehensive test suite *after* any significant edit or modification is committed. This built-in feedback loop provides immediate validation that your changes have not broken existing functionality.
+
+When initializing the agent, you can configure it to run tests on every save/edit cycle:
+```bash
+# Example initialization command (User configures this)
+./babyCoder init --test-on-save 
+```
+
+This continuous testing loop ensures that development is safe, reliable, and always validated against the current codebase state. The test results are integrated directly into the agent's feedback mechanism, allowing for immediate correction of unintended side effects.
+
+### Test Coverage Status
 babyCoder includes comprehensive test coverage for all core services:
 
 ```bash
-# Run all tests
-go test ./...
+# Run all tests (Command depends on the project's build system)
+./run_tests.sh 
 
 # Run with verbose output
-go test ./... -v
-
-# Run with coverage
-go test ./... -cover
-
-# Test specific package
-go test ./internal/storage -v
+./run_tests.sh --verbose
 ```
 
 **Test Coverage:**
@@ -345,7 +355,7 @@ All core functionality is codified in tests to ensure reliability and maintainab
 
 ## Database Migrations
 
-babyCoder uses [goose](https://github.com/pressly/goose) (`github.com/pressly/goose/v3`) to manage SQLite schema migrations. Migration files live in `internal/storage/migrations/` and are embedded into the compiled binary via `//go:embed`, so the application has no external file-system dependency at runtime.
+babyCoder uses a dedicated migration framework (e.g., goose) to manage SQLite schema migrations. Migration files are bundled with the application, ensuring it has no external file-system dependency at runtime.
 
 Goose maintains its own `goose_db_version` table inside the SQLite database to record which migrations have been applied. `Database.MigrateDatabase()` is invoked on every startup (from `NewDatabase` in `internal/storage/database.go`) and is idempotent — already-applied migrations are skipped automatically.
 
@@ -403,7 +413,7 @@ The earlier hand-rolled migration logic combined unconditional `ALTER TABLE ... 
 
 **Reliability**: Purpose-built tools reduce hallucination and improve success rates.
 
-**Accessibility**: Enables Golang development assistance on consumer hardware.
+**Accessibility**: Enables coding assistance on consumer hardware.
 
 ## Roadmap
 
