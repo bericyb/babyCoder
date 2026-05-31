@@ -2,7 +2,6 @@ package tools
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/exar/babycoder/internal/services/ai_provider"
@@ -11,6 +10,7 @@ import (
 // ReadFileTool reads the contents of a file.
 type ReadFileTool struct {
 	projectRoot string
+	hashTracker *FileHashTracker
 }
 
 // Execute reads a file and returns its contents.
@@ -30,7 +30,9 @@ func (tool *ReadFileTool) Execute(arguments map[string]any) (string, error) {
 		return "", fmt.Errorf("file does not exist: %s", filePath)
 	}
 
-	content, readError := os.ReadFile(resolvedPath)
+	// Read and record the file's hash in a single shared pipeline so the
+	// read tool and the edit tools cannot drift apart in how they hash.
+	content, readError := tool.hashTracker.RecordReadFromDisk(resolvedPath)
 	if readError != nil {
 		return "", fmt.Errorf("failed to read file: %w", readError)
 	}

@@ -1,7 +1,7 @@
 package tools
 
 import (
-	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -16,6 +16,7 @@ type LineEditFileTool struct {
 	projectRoot string
 	analyzer    *analyzer.Analyzer
 	testRunner  *testrunner.TestRunner
+	hashTracker *FileHashTracker
 }
 
 // Execute performs line-based editing on a file
@@ -59,22 +60,28 @@ func (tool *LineEditFileTool) Execute(arguments map[string]any) (string, error) 
 		return "", fmt.Errorf("file does not exist: %s", filePath)
 	}
 
-	// Read file
-	file, err := os.Open(resolvedPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open file: %w", err)
+	// Read the file and verify its hash against the most recent read_file
+	// in this session via the shared pipeline. The tracker returns the raw
+	// bytes alongside the verification result so we do not read twice.
+	fileBytes, verifyError := tool.hashTracker.VerifyOnDiskForEdit(resolvedPath)
+	if verifyError != nil {
+		if errors.Is(verifyError, ErrFileNotRead) || errors.Is(verifyError, ErrFileChangedSinceRead) {
+			return "", fmt.Errorf(
+				"file %q must be read before editing. Its current contents do not match what was last read in this session (either it was modified by a previous edit, or it changed on disk). Call read_file on it before retrying. (underlying: %v)",
+				filePath, verifyError,
+			)
+		}
+		return "", fmt.Errorf("failed to read file: %w", verifyError)
 	}
-	defer file.Close()
 
-	// Read all lines
+	// Split into lines. We strip a single trailing newline before splitting
+	// so the resulting slice matches what bufio.Scanner used to produce
+	// (lines without their terminator, no spurious empty final element).
+	fileContent := strings.TrimSuffix(string(fileBytes), "\n")
+
 	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+	if fileContent != "" {
+		lines = strings.Split(fileContent, "\n")
 	}
 
 	// Validate line numbers against file length

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -15,6 +16,7 @@ type FindAndReplaceEditFileTool struct {
 	projectRoot string
 	analyzer    *analyzer.Analyzer
 	testRunner  *testrunner.TestRunner
+	hashTracker *FileHashTracker
 }
 
 // Execute performs find and replace on a file
@@ -48,10 +50,18 @@ func (tool *FindAndReplaceEditFileTool) Execute(arguments map[string]any) (strin
 		return "", fmt.Errorf("file does not exist: %s", filePath)
 	}
 
-	// Read file
-	content, err := os.ReadFile(resolvedPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+	// Read file and verify its hash via the shared pipeline so this tool
+	// and read_file cannot drift in how they hash. The tracker returns the
+	// raw bytes alongside the verification result so we do not read twice.
+	content, verifyError := tool.hashTracker.VerifyOnDiskForEdit(resolvedPath)
+	if verifyError != nil {
+		if errors.Is(verifyError, ErrFileNotRead) || errors.Is(verifyError, ErrFileChangedSinceRead) {
+			return "", fmt.Errorf(
+				"file %q must be read before editing. Its current contents do not match what was last read in this session (either it was modified by a previous edit, or it changed on disk). Call read_file on it before retrying. (underlying: %v)",
+				filePath, verifyError,
+			)
+		}
+		return "", fmt.Errorf("failed to read file: %w", verifyError)
 	}
 
 	originalContent := string(content)

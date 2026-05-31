@@ -20,6 +20,7 @@ type ToolRegistry struct {
 	analyzer    *analyzer.Analyzer
 	testRunner  *testrunner.TestRunner
 	database    *storage.Database
+	hashTracker *FileHashTracker
 }
 
 // Tool represents a function that can be called by the agent
@@ -30,6 +31,8 @@ type Tool interface {
 
 // NewToolRegistry creates a new tool registry
 func NewToolRegistry(projectRoot, sessionID string, codeAnalyzer *analyzer.Analyzer, testRunner *testrunner.TestRunner, database *storage.Database) *ToolRegistry {
+	hashTracker := NewFileHashTracker()
+
 	registry := &ToolRegistry{
 		projectRoot: projectRoot,
 		sessionID:   sessionID,
@@ -37,14 +40,15 @@ func NewToolRegistry(projectRoot, sessionID string, codeAnalyzer *analyzer.Analy
 		analyzer:    codeAnalyzer,
 		testRunner:  testRunner,
 		database:    database,
+		hashTracker: hashTracker,
 	}
 
 	// Register file operation tools
-	registry.registerTool(&ReadFileTool{projectRoot: projectRoot})
+	registry.registerTool(&ReadFileTool{projectRoot: projectRoot, hashTracker: hashTracker})
 	registry.registerTool(&WriteFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner})
 	registry.registerTool(&ListFilesTool{projectRoot: projectRoot})
-	registry.registerTool(&LineEditFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner})
-	registry.registerTool(&FindAndReplaceEditFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner})
+	registry.registerTool(&LineEditFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner, hashTracker: hashTracker})
+	registry.registerTool(&FindAndReplaceEditFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner, hashTracker: hashTracker})
 
 	// Register code analysis tools
 	registry.registerTool(&CheckCodeStatusTool{analyzer: codeAnalyzer})

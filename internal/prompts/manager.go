@@ -13,7 +13,7 @@ type PromptType string
 const (
 	// MainAgent is the primary agent's system prompt
 	MainAgent PromptType = "main_agent"
-	
+
 	// SubAgent is the research sub-agent's system prompt
 	SubAgent PromptType = "sub_agent"
 )
@@ -35,16 +35,16 @@ func NewPromptManager(projectRoot string) *PromptManager {
 // NewPromptManagerFromConfig creates a prompt manager with config overrides pre-loaded
 func NewPromptManagerFromConfig(projectRoot string, mainAgentPrompt string, subAgentPrompt string) (*PromptManager, error) {
 	manager := NewPromptManager(projectRoot)
-	
+
 	promptConfig := map[string]any{
 		"main_agent": mainAgentPrompt,
 		"sub_agent":  subAgentPrompt,
 	}
-	
+
 	if err := manager.LoadFromConfig(promptConfig); err != nil {
 		return nil, err
 	}
-	
+
 	return manager, nil
 }
 
@@ -58,12 +58,11 @@ func (pm *PromptManager) GetPrompt(promptType PromptType) string {
 	// Check for override
 	if override, exists := pm.overrides[promptType]; exists {
 		// Check if it's a file path
-		if strings.HasPrefix(override, "file://") {
-			filePath := strings.TrimPrefix(override, "file://")
+		if filePath, ok := strings.CutPrefix(override, "file://"); ok {
 			if !filepath.IsAbs(filePath) {
 				filePath = filepath.Join(pm.projectRoot, filePath)
 			}
-			
+
 			content, err := os.ReadFile(filePath)
 			if err == nil {
 				return string(content)
@@ -74,7 +73,7 @@ func (pm *PromptManager) GetPrompt(promptType PromptType) string {
 			return override
 		}
 	}
-	
+
 	// Return default prompt
 	return pm.getDefaultPrompt(promptType)
 }
@@ -82,12 +81,12 @@ func (pm *PromptManager) GetPrompt(promptType PromptType) string {
 // RenderPrompt renders a prompt with variable substitution
 func (pm *PromptManager) RenderPrompt(promptType PromptType, vars map[string]string) string {
 	prompt := pm.GetPrompt(promptType)
-	
+
 	for key, value := range vars {
 		placeholder := fmt.Sprintf("{{%s}}", key)
 		prompt = strings.ReplaceAll(prompt, placeholder, value)
 	}
-	
+
 	return prompt
 }
 
@@ -96,17 +95,17 @@ func (pm *PromptManager) LoadFromConfig(config map[string]any) error {
 	if config == nil {
 		return nil
 	}
-	
+
 	// Load main agent prompt
 	if mainAgent, ok := config["main_agent"].(string); ok && mainAgent != "" {
 		pm.SetOverride(MainAgent, mainAgent)
 	}
-	
+
 	// Load sub-agent prompt
 	if subAgent, ok := config["sub_agent"].(string); ok && subAgent != "" {
 		pm.SetOverride(SubAgent, subAgent)
 	}
-	
+
 	return nil
 }
 
@@ -116,17 +115,17 @@ func (pm *PromptManager) LoadFromConfig(config map[string]any) error {
 // 3. Project context/dream (from .babycoder/dream.txt if exists)
 func (pm *PromptManager) BuildSystemPrompt(promptType PromptType, rulesText string, dreamContent string) string {
 	prompt := pm.GetPrompt(promptType)
-	
+
 	// Append rules if provided
 	if rulesText != "" {
 		prompt = prompt + "\n\n" + rulesText
 	}
-	
+
 	// Append dream/context if provided
 	if dreamContent != "" {
 		prompt = prompt + "\n\n## PROJECT CONTEXT\n" + dreamContent
 	}
-	
+
 	return prompt
 }
 

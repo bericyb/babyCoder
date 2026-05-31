@@ -281,7 +281,9 @@ func main() {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	tool := &LineEditFileTool{projectRoot: tempDir}
+	tracker := NewFileHashTracker()
+	if _, err := tracker.RecordReadFromDisk(testFile); err != nil { t.Fatalf("seed record failed: %v", err) }
+	tool := &LineEditFileTool{projectRoot: tempDir, hashTracker: tracker}
 
 	// Edit line 4
 	args := map[string]any{
@@ -324,7 +326,9 @@ func TestLineEditFileToolMultipleLines(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	tool := &LineEditFileTool{projectRoot: tempDir}
+	tracker := NewFileHashTracker()
+	if _, err := tracker.RecordReadFromDisk(testFile); err != nil { t.Fatalf("seed record failed: %v", err) }
+	tool := &LineEditFileTool{projectRoot: tempDir, hashTracker: tracker}
 
 	// Replace lines 2-4 with new content
 	args := map[string]any{
@@ -369,7 +373,9 @@ func farewell() {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	tool := &FindAndReplaceEditFileTool{projectRoot: tempDir}
+	tracker := NewFileHashTracker()
+	if _, err := tracker.RecordReadFromDisk(testFile); err != nil { t.Fatalf("seed record failed: %v", err) }
+	tool := &FindAndReplaceEditFileTool{projectRoot: tempDir, hashTracker: tracker}
 
 	// Replace first occurrence only
 	args := map[string]any{
@@ -413,7 +419,9 @@ func TestFindAndReplaceEditFileToolReplaceAll(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	tool := &FindAndReplaceEditFileTool{projectRoot: tempDir}
+	tracker := NewFileHashTracker()
+	if _, err := tracker.RecordReadFromDisk(testFile); err != nil { t.Fatalf("seed record failed: %v", err) }
+	tool := &FindAndReplaceEditFileTool{projectRoot: tempDir, hashTracker: tracker}
 
 	args := map[string]any{
 		"file_path":    "test.txt",
@@ -455,7 +463,9 @@ func TestFindAndReplaceEditFileToolNotFound(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	tool := &FindAndReplaceEditFileTool{projectRoot: tempDir}
+	tracker := NewFileHashTracker()
+	if _, err := tracker.RecordReadFromDisk(testFile); err != nil { t.Fatalf("seed record failed: %v", err) }
+	tool := &FindAndReplaceEditFileTool{projectRoot: tempDir, hashTracker: tracker}
 
 	args := map[string]any{
 		"file_path":    "test.txt",
