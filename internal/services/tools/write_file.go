@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/exar/babycoder/internal/services/ai_provider"
 	"github.com/exar/babycoder/internal/services/analyzer"
@@ -19,7 +18,7 @@ type WriteFileTool struct {
 }
 
 // Execute writes content to a file
-func (tool *WriteFileTool) Execute(arguments map[string]interface{}) (string, error) {
+func (tool *WriteFileTool) Execute(arguments map[string]any) (string, error) {
 	filePath, err := getStringArg(arguments, "file_path")
 	if err != nil {
 		return "", err
@@ -51,14 +50,13 @@ func (tool *WriteFileTool) Execute(arguments map[string]interface{}) (string, er
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	// Trigger background analysis and checks if this is a Go file
-	if strings.HasSuffix(filePath, ".go") {
-		if tool.analyzer != nil {
-			tool.analyzer.AnalyzeAsync()
-		}
-		if tool.testRunner != nil {
-			tool.testRunner.MarkDirty() // Mark that tests need to run
-		}
+	// Trigger background analysis and test run after any file edit. Both
+	// are no-ops if the agent has not yet supplied a build/test command.
+	if tool.analyzer != nil {
+		tool.analyzer.AnalyzeAsync()
+	}
+	if tool.testRunner != nil {
+		tool.testRunner.MarkDirty()
 	}
 
 	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), filePath), nil
@@ -71,18 +69,18 @@ func (tool *WriteFileTool) GetDefinition() ai_provider.Tool {
 		Function: ai_provider.ToolFunction{
 			Name:        "write_file",
 			Description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does.",
-			Parameters: map[string]interface{}{
+			Parameters: map[string]any{
 				"type": "object",
-				"properties": map[string]interface{}{
-					"file_path": map[string]interface{}{
+				"properties": map[string]any{
+					"file_path": map[string]any{
 						"type":        "string",
 						"description": "Path to the file to write (relative to project root or absolute)",
 					},
-					"content": map[string]interface{}{
+					"content": map[string]any{
 						"type":        "string",
 						"description": "Content to write to the file",
 					},
-					"create_directories": map[string]interface{}{
+					"create_directories": map[string]any{
 						"type":        "boolean",
 						"description": "Whether to create parent directories if they don't exist (default: true)",
 					},

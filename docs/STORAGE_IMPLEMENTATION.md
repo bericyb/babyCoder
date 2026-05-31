@@ -63,7 +63,7 @@ A complete storage service for babyCoder that persists agent sessions, conversat
 
 ### 4. Configuration Update
 
-Updated `.babycoder.json` to point to your LMStudio instance:
+Updated `.babycoder/babycoder.json` to point to your LMStudio instance:
 
 ```json
 {
@@ -75,11 +75,11 @@ Updated `.babycoder.json` to point to your LMStudio instance:
 
 ## Database File
 
-Location: `.babycoder.db` in project root
+Location: `.babycoder/babycoder.db` (inside the `.babycoder/` directory at the project root)
 
 **Structure:**
 ```
-.babycoder.db (SQLite3)
+.babycoder/babycoder.db (SQLite3)
 ├── sessions (session metadata)
 ├── messages (conversation history)
 └── tool_executions (tool usage tracking)
@@ -183,7 +183,7 @@ go build -o babyCoder
 ### Modified:
 - `internal/services/agent/agent.go` (added persistence)
 - `main.go` (added session commands)
-- `.babycoder.json` (updated endpoint)
+- `.babycoder/babycoder.json` (updated endpoint)
 - `go.mod` (added dependencies)
 
 ### Dependencies Added:

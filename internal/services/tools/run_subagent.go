@@ -42,22 +42,22 @@ func (tool *SubAgentTool) GetDefinition() ai_provider.Tool {
 		Function: ai_provider.ToolFunction{
 			Name:        "run_subagent",
 			Description: "Spawn an isolated sub-agent to research a specific question or task. The sub-agent has access to all tools and will return a concise executive summary. Use this to prevent context pollution when deep investigation is needed (e.g., 'how does the notification system work?', 'analyze the authentication flow').",
-			Parameters: map[string]interface{}{
+			Parameters: map[string]any{
 				"type": "object",
-				"properties": map[string]interface{}{
-					"task": map[string]interface{}{
+				"properties": map[string]any{
+					"task": map[string]any{
 						"type":        "string",
 						"description": "Clear description of the research task or question for the sub-agent to investigate (e.g., 'Find out how error handling works in the API layer')",
 					},
-					"max_iterations": map[string]interface{}{
+					"max_iterations": map[string]any{
 						"type":        "integer",
 						"description": "Maximum number of agent loop iterations to prevent runaway execution (default: 10, max: 50)",
 					},
-					"timeout_seconds": map[string]interface{}{
+					"timeout_seconds": map[string]any{
 						"type":        "integer",
 						"description": "Maximum execution time in seconds (default: 300, max: 1800)",
 					},
-					"custom_instructions": map[string]interface{}{
+					"custom_instructions": map[string]any{
 						"type":        "string",
 						"description": "Optional additional instructions to append to the sub-agent's prompt",
 					},
@@ -80,7 +80,7 @@ type SubAgentResult struct {
 }
 
 // Execute spawns a sub-agent and returns an executive summary
-func (tool *SubAgentTool) Execute(arguments map[string]interface{}) (string, error) {
+func (tool *SubAgentTool) Execute(arguments map[string]any) (string, error) {
 	startTime := time.Now()
 
 	// Parse arguments

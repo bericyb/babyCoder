@@ -247,7 +247,7 @@ No manual intervention required!
 
 ## Privacy & Security
 
-- **Local-only:** All data stored in `.babycoder.db` on your machine
+- **Local-only:** All data stored in `.babycoder/babycoder.db` on your machine
 - **No external tracking:** Nothing sent to external services
 - **Full control:** Delete sessions anytime with `./babyCoder sessions delete <id>`
 - **Project-scoped:** Each project has its own database

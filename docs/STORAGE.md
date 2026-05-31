@@ -64,7 +64,7 @@ Tracks tool execution details and performance.
 
 ```go
 // Create new database connection
-db, err := storage.NewDatabase("/path/to/.babycoder.db")
+db, err := storage.NewDatabase("/path/to/.babycoder/babycoder.db")
 defer db.Close()
 
 // Create a session
@@ -171,7 +171,7 @@ The agent service automatically integrates with the storage layer:
 
 ```go
 // Create database
-db, err := storage.NewDatabase(".babycoder.db")
+db, err := storage.NewDatabase(".babycoder/babycoder.db")
 
 // Create agent with database
 agent := agent.NewAgent(provider, config, db)
@@ -189,12 +189,13 @@ agent.LoadSession(sessionID)  // Restores message history
 
 ## Storage Location
 
-By default, the database is stored in the project root:
+By default, application state is kept inside the `.babycoder/` directory at the project root:
 
 ```
 /path/to/project/
-├── .babycoder.json     # Configuration
-└── .babycoder.db       # SQLite database
+└── .babycoder/
+    ├── babycoder.json   # Configuration
+    └── babycoder.db     # SQLite database
 ```
 
 ## Benefits

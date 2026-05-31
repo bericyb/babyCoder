@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -55,8 +57,14 @@ type ToolExecution struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-// NewDatabase creates a new database connection and initializes schema
+// NewDatabase creates a new database connection and initializes schema.
+// The parent directory of databasePath is created if it does not yet exist,
+// so callers do not need to ensure the directory exists beforehand.
 func NewDatabase(databasePath string) (*Database, error) {
+	if err := os.MkdirAll(filepath.Dir(databasePath), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create database directory: %w", err)
+	}
+
 	connection, err := sql.Open("sqlite3", databasePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
@@ -70,12 +78,9 @@ func NewDatabase(databasePath string) (*Database, error) {
 
 	database := &Database{connection: connection}
 
-	if err := database.initializeSchema(); err != nil {
-		connection.Close()
-		return nil, fmt.Errorf("failed to initialize schema: %w", err)
-	}
-
-	// Apply any pending migrations
+	// Apply any pending schema migrations. goose itself creates and maintains
+	// the bookkeeping table on first run, so no separate schema-initialization
+	// step is required here.
 	if err := database.MigrateDatabase(); err != nil {
 		connection.Close()
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
@@ -90,7 +95,7 @@ func (database *Database) Close() error {
 }
 
 // Helper function to marshal tool calls to JSON string
-func MarshalToolCalls(toolCalls interface{}) string {
+func MarshalToolCalls(toolCalls any) string {
 	if toolCalls == nil {
 		return ""
 	}
@@ -102,7 +107,7 @@ func MarshalToolCalls(toolCalls interface{}) string {
 }
 
 // Helper function to unmarshal tool calls from JSON string
-func UnmarshalToolCalls(data string, target interface{}) error {
+func UnmarshalToolCalls(data string, target any) error {
 	if data == "" {
 		return nil
 	}

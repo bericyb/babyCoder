@@ -45,7 +45,7 @@ func DefaultConfiguration() *Configuration {
 			APIKey:      "",
 		},
 		Agent: AgentConfiguration{
-			MaxIterations: 10,
+			MaxIterations: 100,
 		},
 		Prompts: PromptsConfiguration{},
 	}
@@ -68,8 +68,8 @@ func LoadConfiguration(configPath string) (*Configuration, error) {
 
 // LoadOrDefaultConfiguration attempts to load configuration from file, falls back to defaults
 func LoadOrDefaultConfiguration(projectRoot string) (*Configuration, error) {
-	configPath := filepath.Join(projectRoot, ".babycoder.json")
-	
+	configPath := filepath.Join(projectRoot, ".babycoder", "babycoder.json")
+
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Configuration file does not exist, use defaults
 		return DefaultConfiguration(), nil
@@ -78,8 +78,13 @@ func LoadOrDefaultConfiguration(projectRoot string) (*Configuration, error) {
 	return LoadConfiguration(configPath)
 }
 
-// SaveConfiguration saves configuration to a file
+// SaveConfiguration saves configuration to a file. The parent directory of
+// configPath is created if it does not yet exist.
 func SaveConfiguration(config *Configuration, configPath string) error {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return fmt.Errorf("failed to create configuration directory: %w", err)
+	}
+
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal configuration: %w", err)

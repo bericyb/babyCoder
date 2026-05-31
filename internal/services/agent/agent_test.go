@@ -71,7 +71,7 @@ func TestDreamTimerStartsAfterRun(t *testing.T) {
 	agent.AddUserMessage("test message")
 
 	// Run agent
-	err := agent.Run(context.Background(), func(toolName string, args map[string]interface{}) (string, error) {
+	err := agent.Run(context.Background(), func(toolName string, args map[string]any) (string, error) {
 		return "tool result", nil
 	})
 
@@ -105,7 +105,7 @@ func TestDreamTimerCancelledOnNewRun(t *testing.T) {
 	agent.AddUserMessage("first message")
 
 	// First run
-	agent.Run(context.Background(), func(toolName string, args map[string]interface{}) (string, error) {
+	agent.Run(context.Background(), func(toolName string, args map[string]any) (string, error) {
 		return "tool result", nil
 	})
 
@@ -113,7 +113,7 @@ func TestDreamTimerCancelledOnNewRun(t *testing.T) {
 
 	// Second run should cancel first timer
 	agent.AddUserMessage("second message")
-	agent.Run(context.Background(), func(toolName string, args map[string]interface{}) (string, error) {
+	agent.Run(context.Background(), func(toolName string, args map[string]any) (string, error) {
 		return "tool result", nil
 	})
 

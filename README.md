@@ -1,6 +1,6 @@
 # babyCoder
 
-A specialized AI coding agent designed exclusively for Golang development, optimized for smaller local language models through precision tooling and enhanced code locality.
+A specialized AI coding agent designed for multi-language development, optimized for smaller local language models through precision tooling and enhanced code locality.
 
 ## Quick Start
 
@@ -17,8 +17,7 @@ A specialized AI coding agent designed exclusively for Golang development, optim
 
 ## Overview
 
-babyCoder addresses the fundamental challenge of enabling smaller, resource-efficient language models to write and edit Golang code with the same precision and reliability as larger frontier models. By providing purpose-built tools with fine-grained code locality and deep integration with Golang's static analysis ecosystem, babyCoder makes professional-grade Golang development accessible to local AI models.
-
+babyCoder addresses the fundamental challenge of enabling smaller, resource-efficient language models to write and edit code in any language with the same precision and reliability as larger frontier models. By providing purpose-built tools with fine-grained code locality and deep integration with a language's static analysis ecosystem, babyCoder makes professional-grade development accessible to local AI models.
 **Primary Interface**: Interactive CLI - Just run `./babyCoder` to start chatting with the agent  
 **Secondary Interface**: Optional HTTP API server for external agent integration
 
@@ -45,7 +44,7 @@ babyCoder: "Edit function hash abc123 to add validation"
 
 ### 2. Function and Struct Level Locality
 
-babyCoder provides tools that operate at the natural boundaries of Golang code:
+babyCoder provides tools that operate at the natural boundaries of programming languages:
 
 - **Extract Function Definition**: Retrieve a single function with its signature, documentation, and body
 - **Extract Struct Definition**: Get a struct with all its fields, tags, and comments
@@ -114,7 +113,8 @@ babyCoder/
 │       └── database.go             # Sessions, messages, tool executions
 └── .babycoder/
     ├── logs/                       # Timestamped log files (auto-cleanup)
-    └── .babycoder.db              # SQLite database
+    ├── babycoder.db                # SQLite database
+    └── babycoder.json              # Project configuration
 ```
 
 ### Current Implementation Status
@@ -158,10 +158,10 @@ babyCoder/
 ## Technology Stack
 
 ### Backend
-- **Language**: Golang (self-hosted, dogfooding our own tooling)
+- **Language**: [Target Language] (Self-hosted/Tooling specific)
 - **Database**: SQLite with foreign key constraints (single-file, zero-config)
 - **Logging**: File-based with automatic rotation and cleanup
-- **LSP Client**: Integration with `gopls` (planned)
+- **LSP Client**: Integration with Language Server Protocol (LSP) client (Language-agnostic)
 - **Parser**: `go/ast`, `go/parser`, `go/types` (planned)
 
 ### AI Provider Integration
@@ -172,8 +172,9 @@ babyCoder/
 
 ### Storage & Persistence
 - **Database**: SQLite with sessions, messages, and tool_executions tables
+- **Migrations**: [goose](https://github.com/pressly/goose) with embedded SQL files (see [Database Migrations](#database-migrations))
 - **Logging**: Timestamped files in `.babycoder/logs/` with 7-day retention
-- **Configuration**: JSON-based (`.babycoder.json`)
+- **Configuration**: JSON-based (`.babycoder/babycoder.json`)
 - **Session Management**: UUID-based sessions with full audit trail
 
 ## Tool Catalog
@@ -269,13 +270,13 @@ You: Hello! Can you help me with Golang?
 ### Project Initialization
 
 ```bash
-# Create .babycoder.json configuration file
+# Create .babycoder/babycoder.json configuration file
 ./babyCoder init
 ```
 
 ### Configuration
 
-Edit `.babycoder.json` in your project root:
+Edit `.babycoder/babycoder.json` in your project root:
 
 ```json
 {
@@ -287,7 +288,7 @@ Edit `.babycoder.json` in your project root:
     "api_key": ""
   },
   "agent": {
-    "max_iterations": 10,
+    "max_iterations": 100,
     "verbose": false,
     "auto_commit": false
   },
@@ -341,6 +342,47 @@ go test ./internal/storage -v
 - **Total: 21 tests, all passing**
 
 All core functionality is codified in tests to ensure reliability and maintainability.
+
+## Database Migrations
+
+babyCoder uses [goose](https://github.com/pressly/goose) (`github.com/pressly/goose/v3`) to manage SQLite schema migrations. Migration files live in `internal/storage/migrations/` and are embedded into the compiled binary via `//go:embed`, so the application has no external file-system dependency at runtime.
+
+Goose maintains its own `goose_db_version` table inside the SQLite database to record which migrations have been applied. `Database.MigrateDatabase()` is invoked on every startup (from `NewDatabase` in `internal/storage/database.go`) and is idempotent — already-applied migrations are skipped automatically.
+
+### Adding a new migration
+
+1. Create a new file in `internal/storage/migrations/` following the sequential naming convention:
+
+   ```
+   00002_short_description_of_change.sql
+   ```
+
+   The numeric prefix must be strictly greater than the highest existing migration's prefix. Use a short, descriptive snake_case name (no abbreviations — see the project conventions in `AGENTS.md`).
+
+2. Populate the file with `Up` and `Down` sections. Wrap each individual SQL statement in `StatementBegin` / `StatementEnd` markers — goose otherwise splits on semicolons, which breaks any statement containing an embedded semicolon (e.g. trigger bodies):
+
+   ```sql
+   -- +goose Up
+   -- +goose StatementBegin
+   ALTER TABLE sessions ADD COLUMN archived_at TIMESTAMP;
+   -- +goose StatementEnd
+
+
+   -- +goose Down
+   -- +goose StatementBegin
+   ALTER TABLE sessions DROP COLUMN archived_at;
+   -- +goose StatementEnd
+   ```
+
+3. The `Down` section should reverse the `Up` section as faithfully as SQLite allows. Order `DROP` statements so that dependent objects (indexes, foreign-key children) are dropped before the objects they depend on.
+
+4. Rebuild — `go:embed` will pick the new file up automatically. No Go code changes are required.
+
+5. Run the test suite (`go test ./internal/storage/...`) to confirm the migration applies cleanly against a fresh database.
+
+### Why goose, and what we no longer do
+
+The earlier hand-rolled migration logic combined unconditional `ALTER TABLE ... ADD COLUMN` statements with string-matching on `"duplicate column name"` errors to fake idempotency. It also performed ad-hoc `PRAGMA table_info` introspection to decide whether to rebuild the `messages` table. Goose replaces both patterns with a single, versioned, recorded migration history. Do **not** reintroduce string-matched error handling or unconditional `ALTER` statements; add a new versioned migration file instead.
 
 | Feature | Traditional Agents | babyCoder |
 |---------|-------------------|-----------|
@@ -427,8 +469,8 @@ babyCoder/
 ├── .babycoder/
 │   ├── logs/                        # Timestamped log files
 │   │   └── babycoder_*.log
-│   └── .babycoder.db               # SQLite database
-└── .babycoder.json                 # Project configuration
+│   ├── babycoder.db                 # SQLite database
+│   └── babycoder.json               # Project configuration
 ```
 
 ## Documentation

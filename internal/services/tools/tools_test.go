@@ -20,7 +20,7 @@ func TestReadFileTool(t *testing.T) {
 	tool := &ReadFileTool{projectRoot: tempDir}
 
 	// Test reading file with relative path
-	args := map[string]interface{}{
+	args := map[string]any{
 		"file_path": "test.txt",
 	}
 
@@ -29,8 +29,57 @@ func TestReadFileTool(t *testing.T) {
 		t.Fatalf("Failed to read file: %v", err)
 	}
 
-	if result != testContent {
-		t.Errorf("Expected content %q, got %q", testContent, result)
+	expected := "1: Hello, World!\n2: This is a test file."
+	if result != expected {
+		t.Errorf("Expected content %q, got %q", expected, result)
+	}
+}
+
+func TestAddLineNumbers(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "empty input",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "single line without newline",
+			input:    "hello",
+			expected: "1: hello",
+		},
+		{
+			name:     "single line with trailing newline",
+			input:    "hello\n",
+			expected: "1: hello\n",
+		},
+		{
+			name:     "multiple lines without trailing newline",
+			input:    "foo\nbar\nbaz",
+			expected: "1: foo\n2: bar\n3: baz",
+		},
+		{
+			name:     "multiple lines with trailing newline",
+			input:    "foo\nbar\nbaz\n",
+			expected: "1: foo\n2: bar\n3: baz\n",
+		},
+		{
+			name:     "preserves blank lines in the middle",
+			input:    "foo\n\nbar",
+			expected: "1: foo\n2: \n3: bar",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			result := addLineNumbers(testCase.input)
+			if result != testCase.expected {
+				t.Errorf("addLineNumbers(%q) = %q, expected %q", testCase.input, result, testCase.expected)
+			}
+		})
 	}
 }
 
@@ -38,7 +87,7 @@ func TestReadFileToolNonExistent(t *testing.T) {
 	tempDir := t.TempDir()
 	tool := &ReadFileTool{projectRoot: tempDir}
 
-	args := map[string]interface{}{
+	args := map[string]any{
 		"file_path": "nonexistent.txt",
 	}
 
@@ -53,7 +102,7 @@ func TestReadFileToolPathTraversal(t *testing.T) {
 	tool := &ReadFileTool{projectRoot: tempDir}
 
 	// Try to escape project root
-	args := map[string]interface{}{
+	args := map[string]any{
 		"file_path": "../../../etc/passwd",
 	}
 
@@ -73,7 +122,7 @@ func TestWriteFileTool(t *testing.T) {
 
 	testContent := "New file content\nLine 2"
 
-	args := map[string]interface{}{
+	args := map[string]any{
 		"file_path": "output.txt",
 		"content":   testContent,
 	}
@@ -102,7 +151,7 @@ func TestWriteFileToolCreateDirectories(t *testing.T) {
 	tempDir := t.TempDir()
 	tool := &WriteFileTool{projectRoot: tempDir}
 
-	args := map[string]interface{}{
+	args := map[string]any{
 		"file_path":          "subdir/nested/file.txt",
 		"content":            "test",
 		"create_directories": true,
@@ -135,7 +184,7 @@ func TestListFilesTool(t *testing.T) {
 	tool := &ListFilesTool{projectRoot: tempDir}
 
 	// Test listing all files
-	args := map[string]interface{}{
+	args := map[string]any{
 		"directory": ".",
 	}
 
@@ -164,7 +213,7 @@ func TestListFilesToolWithPattern(t *testing.T) {
 	tool := &ListFilesTool{projectRoot: tempDir}
 
 	// Test with glob pattern
-	args := map[string]interface{}{
+	args := map[string]any{
 		"directory": ".",
 		"pattern":   "*.go",
 	}
@@ -197,7 +246,7 @@ func TestListFilesToolRecursive(t *testing.T) {
 
 	tool := &ListFilesTool{projectRoot: tempDir}
 
-	args := map[string]interface{}{
+	args := map[string]any{
 		"directory": ".",
 		"pattern":   "*.go",
 		"recursive": true,
@@ -235,7 +284,7 @@ func main() {
 	tool := &LineEditFileTool{projectRoot: tempDir}
 
 	// Edit line 4
-	args := map[string]interface{}{
+	args := map[string]any{
 		"file_path":   "test.go",
 		"start_line":  4,
 		"end_line":    4,
@@ -278,7 +327,7 @@ func TestLineEditFileToolMultipleLines(t *testing.T) {
 	tool := &LineEditFileTool{projectRoot: tempDir}
 
 	// Replace lines 2-4 with new content
-	args := map[string]interface{}{
+	args := map[string]any{
 		"file_path":   "test.txt",
 		"start_line":  2,
 		"end_line":    4,
@@ -323,7 +372,7 @@ func farewell() {
 	tool := &FindAndReplaceEditFileTool{projectRoot: tempDir}
 
 	// Replace first occurrence only
-	args := map[string]interface{}{
+	args := map[string]any{
 		"file_path":    "test.go",
 		"find_text":    "println(\"Hello\")",
 		"replace_text": "println(\"Goodbye\")",
@@ -366,7 +415,7 @@ func TestFindAndReplaceEditFileToolReplaceAll(t *testing.T) {
 
 	tool := &FindAndReplaceEditFileTool{projectRoot: tempDir}
 
-	args := map[string]interface{}{
+	args := map[string]any{
 		"file_path":    "test.txt",
 		"find_text":    "foo",
 		"replace_text": "qux",
@@ -408,7 +457,7 @@ func TestFindAndReplaceEditFileToolNotFound(t *testing.T) {
 
 	tool := &FindAndReplaceEditFileTool{projectRoot: tempDir}
 
-	args := map[string]interface{}{
+	args := map[string]any{
 		"file_path":    "test.txt",
 		"find_text":    "Nonexistent",
 		"replace_text": "Replacement",

@@ -15,7 +15,7 @@ type ListFilesTool struct {
 }
 
 // Execute lists files matching the pattern
-func (tool *ListFilesTool) Execute(arguments map[string]interface{}) (string, error) {
+func (tool *ListFilesTool) Execute(arguments map[string]any) (string, error) {
 	// Get directory path (default to project root)
 	dirPath := "."
 	if dirArg, exists := arguments["directory"]; exists {
@@ -125,18 +125,18 @@ func (tool *ListFilesTool) GetDefinition() ai_provider.Tool {
 		Function: ai_provider.ToolFunction{
 			Name:        "list_files",
 			Description: "List files in a directory with optional glob pattern matching. Can search recursively.",
-			Parameters: map[string]interface{}{
+			Parameters: map[string]any{
 				"type": "object",
-				"properties": map[string]interface{}{
-					"directory": map[string]interface{}{
+				"properties": map[string]any{
+					"directory": map[string]any{
 						"type":        "string",
 						"description": "Directory to search (relative to project root, default: '.')",
 					},
-					"pattern": map[string]interface{}{
+					"pattern": map[string]any{
 						"type":        "string",
-						"description": "Glob pattern to match files (e.g., '*.go', 'test_*.txt', default: '*')",
+						"description": "Glob pattern to match files (e.g., '*.py', '*.ts', 'test_*.txt', default: '*')",
 					},
-					"recursive": map[string]interface{}{
+					"recursive": map[string]any{
 						"type":        "boolean",
 						"description": "Whether to search recursively in subdirectories (default: false)",
 					},

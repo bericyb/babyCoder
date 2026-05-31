@@ -116,7 +116,7 @@ func TestSubAgentToolExecution(t *testing.T) {
 			}
 		}
 
-		executor := func(toolName string, arguments map[string]interface{}) (string, error) {
+		executor := func(toolName string, arguments map[string]any) (string, error) {
 			return "mock result", nil
 		}
 
@@ -132,7 +132,7 @@ func TestSubAgentToolExecution(t *testing.T) {
 	}
 
 	// Execute the tool
-	result, err := tool.Execute(map[string]interface{}{
+	result, err := tool.Execute(map[string]any{
 		"task":           "Find out how the notification system works",
 		"max_iterations": float64(5),
 	})
@@ -212,7 +212,7 @@ func TestSubAgentToolDefinition(t *testing.T) {
 	// Verify parameters
 	params := definition.Function.Parameters
 	
-	properties, ok := params["properties"].(map[string]interface{})
+	properties, ok := params["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("Expected properties in parameters")
 	}

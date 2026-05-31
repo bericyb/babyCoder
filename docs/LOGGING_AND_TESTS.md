@@ -185,7 +185,7 @@ babyCoder/
 └── .babycoder/
     ├── logs/                    ← All logs go here
     │   └── babycoder_*.log
-    └── .babycoder.db
+    └── babycoder.db
 ```
 
 ## Next Steps

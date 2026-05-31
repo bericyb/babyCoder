@@ -16,7 +16,7 @@ type BashExecuteTool struct {
 }
 
 // Execute runs a bash command synchronously
-func (tool *BashExecuteTool) Execute(arguments map[string]interface{}) (string, error) {
+func (tool *BashExecuteTool) Execute(arguments map[string]any) (string, error) {
 	command, err := getStringArg(arguments, "command")
 	if err != nil {
 		return "", err
@@ -64,18 +64,18 @@ func (tool *BashExecuteTool) GetDefinition() ai_provider.Tool {
 		Function: ai_provider.ToolFunction{
 			Name:        "bash_execute",
 			Description: "Execute a bash command synchronously and return the output. Use for quick commands that complete in seconds (max 30s default, 300s max).",
-			Parameters: map[string]interface{}{
+			Parameters: map[string]any{
 				"type": "object",
-				"properties": map[string]interface{}{
-					"command": map[string]interface{}{
+				"properties": map[string]any{
+					"command": map[string]any{
 						"type":        "string",
-						"description": "The bash command to execute (e.g., 'ls -la', 'go test ./...', 'curl http://localhost:8080')",
+						"description": "The bash command to execute (e.g., 'ls -la', 'curl http://localhost:8080', 'grep -r TODO .')",
 					},
-					"working_dir": map[string]interface{}{
+					"working_dir": map[string]any{
 						"type":        "string",
 						"description": "Optional working directory (relative to project root or absolute). Defaults to project root.",
 					},
-					"timeout_seconds": map[string]interface{}{
+					"timeout_seconds": map[string]any{
 						"type":        "number",
 						"description": "Optional timeout in seconds (default: 30, max: 300)",
 					},

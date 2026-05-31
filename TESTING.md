@@ -64,11 +64,11 @@ The new dream memory system includes comprehensive tests:
 ./babyCoder init
 ```
 
-This creates a `.babycoder.json` configuration file with default settings.
+This creates a `.babycoder/babycoder.json` configuration file with default settings.
 
 ### 2. Configure LMStudio
 
-Edit `.babycoder.json` to point to your LMStudio instance:
+Edit `.babycoder/babycoder.json` to point to your LMStudio instance:
 
 ```json
 {
@@ -80,7 +80,7 @@ Edit `.babycoder.json` to point to your LMStudio instance:
     "api_key": ""
   },
   "agent": {
-    "max_iterations": 10,
+    "max_iterations": 100,
     "verbose": true,
     "auto_commit": false
   },
@@ -127,7 +127,8 @@ Make sure LMStudio is running and serving a model on the configured endpoint (de
 ```
 babyCoder/
 ├── main.go                           # CLI entry point
-├── .babycoder.json                   # Configuration file (created by init)
+├── .babycoder/                       # Application state directory
+│   └── babycoder.json                # Configuration file (created by init)
 ├── internal/
 │   ├── config/
 │   │   └── config.go                # Configuration loading and defaults
@@ -141,7 +142,7 @@ babyCoder/
 
 ## How It Works
 
-1. **Configuration**: The agent loads settings from `.babycoder.json` or uses defaults
+1. **Configuration**: The agent loads settings from `.babycoder/babycoder.json` or uses defaults
 2. **Provider Setup**: Creates an AI provider client (LMStudio) with the configured endpoint
 3. **Agent Loop**:
    - Sends messages to the LLM
@@ -178,7 +179,7 @@ To test the basic structure without a running LMStudio instance, you can:
 
 1. Review the code structure
 2. Check that configuration loads correctly: `./babyCoder init`
-3. Inspect the generated `.babycoder.json`
+3. Inspect the generated `.babycoder/babycoder.json`
 
 Once LMStudio is running, the agent will be able to:
 - Process natural language prompts
@@ -196,7 +197,7 @@ Once LMStudio is running, the agent will be able to:
 - `api_key`: Optional API key for authentication
 
 ### Agent
-- `max_iterations`: Maximum number of loop iterations (default: 10)
+- `max_iterations`: Maximum number of loop iterations (default: 100)
 - `verbose`: Enable detailed logging (default: true)
 - `auto_commit`: Automatically commit code changes (default: false)
 

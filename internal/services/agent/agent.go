@@ -23,6 +23,7 @@ type Agent struct {
 	systemPrompt  string // Custom system prompt (optional)
 	dreamTimer    *time.Timer
 	projectRoot   string
+	listener      Listener
 }
 
 // NewAgent creates a new agent instance
@@ -35,7 +36,18 @@ func NewAgent(provider ai_provider.Provider, configuration *config.AgentConfigur
 		sessionID:     "",
 		tools:         []ai_provider.Tool{},
 		messages:      []ai_provider.Message{},
+		listener:      noopListener{},
 	}
+}
+
+// SetListener installs a Listener to receive lifecycle events. Passing nil
+// reverts the agent to the no-op default so call sites never have to nil-check.
+func (agent *Agent) SetListener(listener Listener) {
+	if listener == nil {
+		agent.listener = noopListener{}
+		return
+	}
+	agent.listener = listener
 }
 
 // SetSessionID sets the session ID for this agent
@@ -60,7 +72,7 @@ func (agent *Agent) AddSystemMessage(content string) {
 		Content: content,
 	}
 	agent.messages = append(agent.messages, message)
-	
+
 	// Save to database if session is active
 	if agent.sessionID != "" && agent.database != nil {
 		agent.saveMessage(message)
@@ -74,7 +86,7 @@ func (agent *Agent) AddUserMessage(content string) {
 		Content: content,
 	}
 	agent.messages = append(agent.messages, message)
-	
+
 	// Save to database if session is active
 	if agent.sessionID != "" && agent.database != nil {
 		agent.saveMessage(message)
@@ -105,7 +117,7 @@ func (agent *Agent) RegisterTool(tool ai_provider.Tool) {
 }
 
 // ToolExecutor is a function that executes a tool call and returns the result
-type ToolExecutor func(toolName string, arguments map[string]interface{}) (string, error)
+type ToolExecutor func(toolName string, arguments map[string]any) (string, error)
 
 // UpdateDreamNow immediately updates the dream file based on the current session
 func (agent *Agent) UpdateDreamNow(ctx context.Context) {
@@ -118,7 +130,7 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 	if agent.dreamTimer != nil {
 		agent.dreamTimer.Stop()
 	}
-	
+
 	// Only add system message if this is the first message
 	if len(agent.messages) == 0 {
 		// Use custom prompt if set, otherwise use empty (will be set by caller)
@@ -136,7 +148,9 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 		}
 
 		// Call the AI provider
+		agent.listener.OnRequestStart(iteration)
 		response, err := agent.provider.ChatCompletion(ctx, request)
+		agent.listener.OnRequestEnd(iteration)
 		if err != nil {
 			return fmt.Errorf("failed to get completion: %w", err)
 		}
@@ -150,7 +164,11 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 
 		// Add assistant message to history
 		agent.messages = append(agent.messages, assistantMessage)
-		
+
+		// Notify listener of the assistant message (content + any
+		// out-of-band reasoning text).
+		agent.listener.OnAssistantMessage(assistantMessage.Content, assistantReasoning(assistantMessage))
+
 		// Save assistant message to database and capture the message ID
 		var assistantMessageID int64
 		if agent.sessionID != "" && agent.database != nil {
@@ -161,13 +179,13 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 				ToolCalls: storage.MarshalToolCalls(assistantMessage.ToolCalls),
 				CreatedAt: time.Now(),
 			}
-			
+
 			if err := agent.database.SaveMessage(dbMessage); err != nil {
 				log.Printf("Warning: failed to save assistant message: %v\n", err)
 			} else {
 				assistantMessageID = dbMessage.ID // Capture the ID for tool executions
 			}
-			
+
 			// Update session
 			session, err := agent.database.GetSession(agent.sessionID)
 			if err == nil && session != nil {
@@ -183,7 +201,7 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 			agent.dreamTimer = time.AfterFunc(10*time.Second, func() {
 				agent.updateDream(context.Background())
 			})
-			
+
 			return nil
 		}
 
@@ -191,25 +209,30 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 		if choice.FinishReason == "tool_calls" && len(assistantMessage.ToolCalls) > 0 {
 			for _, toolCall := range assistantMessage.ToolCalls {
 				// Parse arguments
-				var arguments map[string]interface{}
+				var arguments map[string]any
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &arguments); err != nil {
 					return fmt.Errorf("failed to parse tool arguments: %w", err)
 				}
+
+				// Notify listener before dispatching
+				agent.listener.OnToolCall(toolCall.Function.Name, arguments)
 
 				// Execute tool and track timing
 				startTime := time.Now()
 				result, err := executor(toolCall.Function.Name, arguments)
 				executionTime := time.Since(startTime).Milliseconds()
-				
+
 				success := err == nil
 				errorMsg := ""
-				
+
 				if err != nil {
 					// Return error to the model
 					result = fmt.Sprintf("Error executing tool: %s", err.Error())
 					errorMsg = err.Error()
 				}
-				
+
+				agent.listener.OnToolResult(toolCall.Function.Name, result, success, executionTime)
+
 				// Save tool execution to database
 				if agent.sessionID != "" && agent.database != nil {
 					// Extract file_path from arguments if present
@@ -219,7 +242,7 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 							filePath = fp
 						}
 					}
-					
+
 					toolExecution := &storage.ToolExecution{
 						SessionID:   agent.sessionID,
 						MessageID:   assistantMessageID, // Link to the assistant message that requested this tool
@@ -244,7 +267,7 @@ func (agent *Agent) Run(ctx context.Context, executor ToolExecutor) error {
 					ToolCallID: toolCall.ID,
 				}
 				agent.messages = append(agent.messages, toolMessage)
-				
+
 				// Save tool response message
 				if agent.sessionID != "" && agent.database != nil {
 					if err := agent.saveMessage(toolMessage); err != nil {
@@ -288,7 +311,7 @@ func (agent *Agent) RunIteration(ctx context.Context, executor ToolExecutor) (st
 
 	// Add assistant message to history
 	agent.messages = append(agent.messages, assistantMessage)
-	
+
 	// Save assistant message to database and capture the message ID
 	var assistantMessageID int64
 	if agent.sessionID != "" && agent.database != nil {
@@ -299,13 +322,13 @@ func (agent *Agent) RunIteration(ctx context.Context, executor ToolExecutor) (st
 			ToolCalls: storage.MarshalToolCalls(assistantMessage.ToolCalls),
 			CreatedAt: time.Now(),
 		}
-		
+
 		if err := agent.database.SaveMessage(dbMessage); err != nil {
 			log.Printf("Warning: failed to save assistant message: %v\n", err)
 		} else {
 			assistantMessageID = dbMessage.ID
 		}
-		
+
 		// Update session
 		session, err := agent.database.GetSession(agent.sessionID)
 		if err == nil && session != nil {
@@ -318,7 +341,7 @@ func (agent *Agent) RunIteration(ctx context.Context, executor ToolExecutor) (st
 	if choice.FinishReason == "tool_calls" && len(assistantMessage.ToolCalls) > 0 {
 		for _, toolCall := range assistantMessage.ToolCalls {
 			// Parse arguments
-			var arguments map[string]interface{}
+			var arguments map[string]any
 			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &arguments); err != nil {
 				return "", fmt.Errorf("failed to parse tool arguments: %w", err)
 			}
@@ -327,15 +350,15 @@ func (agent *Agent) RunIteration(ctx context.Context, executor ToolExecutor) (st
 			startTime := time.Now()
 			result, err := executor(toolCall.Function.Name, arguments)
 			executionTime := time.Since(startTime).Milliseconds()
-			
+
 			success := err == nil
 			errorMsg := ""
-			
+
 			if err != nil {
 				result = fmt.Sprintf("Error executing tool: %s", err.Error())
 				errorMsg = err.Error()
 			}
-			
+
 			// Save tool execution to database
 			if agent.sessionID != "" && agent.database != nil {
 				filePath := ""
@@ -344,7 +367,7 @@ func (agent *Agent) RunIteration(ctx context.Context, executor ToolExecutor) (st
 						filePath = fp
 					}
 				}
-				
+
 				toolExecution := &storage.ToolExecution{
 					SessionID:   agent.sessionID,
 					MessageID:   assistantMessageID,
@@ -369,7 +392,7 @@ func (agent *Agent) RunIteration(ctx context.Context, executor ToolExecutor) (st
 				ToolCallID: toolCall.ID,
 			}
 			agent.messages = append(agent.messages, toolMessage)
-			
+
 			// Save tool response message
 			if agent.sessionID != "" && agent.database != nil {
 				if err := agent.saveMessage(toolMessage); err != nil {
@@ -389,7 +412,7 @@ func (agent *Agent) HasPendingToolCalls() bool {
 	}
 
 	lastMessage := agent.messages[len(agent.messages)-1]
-	
+
 	// If last message is from assistant and has tool calls, we need to process them
 	if lastMessage.Role == "assistant" && len(lastMessage.ToolCalls) > 0 {
 		// But check if we've already processed them (next message would be a tool response)
@@ -457,4 +480,13 @@ func (agent *Agent) LoadSession(sessionID string) error {
 	return nil
 }
 
-
+// assistantReasoning extracts the out-of-band reasoning text from an assistant
+// message. Providers disagree on the field name: OpenAI o1 / DeepSeek use
+// `reasoning_content`, others use `reasoning`. We accept both, preferring the
+// former when populated.
+func assistantReasoning(message ai_provider.Message) string {
+	if message.ReasoningContent != "" {
+		return message.ReasoningContent
+	}
+	return message.Reasoning
+}

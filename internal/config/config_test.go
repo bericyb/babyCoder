@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -34,7 +35,7 @@ func TestDefaultConfiguration(t *testing.T) {
 func TestLoadConfiguration(t *testing.T) {
 	// Create temporary config file
 	tempDir := t.TempDir()
-	configPath := tempDir + "/.babycoder.json"
+	configPath := filepath.Join(tempDir, "babycoder.json")
 
 	configJSON := `{
 		"ai_provider": {
@@ -98,9 +99,17 @@ func TestLoadOrDefaultConfiguration(t *testing.T) {
 }
 
 func TestLoadOrDefaultConfigurationWithExistingFile(t *testing.T) {
-	// Create temporary config file
+	// Create temporary config file at the production-resolved path:
+	//   <projectRoot>/.babycoder/babycoder.json
+	// LoadOrDefaultConfiguration derives this location from the projectRoot
+	// argument, so the fixture must live there for the test to exercise the
+	// "file exists" branch rather than silently falling back to defaults.
 	tempDir := t.TempDir()
-	configPath := tempDir + "/.babycoder.json"
+	configDirectory := filepath.Join(tempDir, ".babycoder")
+	if err := os.MkdirAll(configDirectory, 0755); err != nil {
+		t.Fatalf("Failed to create configuration directory: %v", err)
+	}
+	configPath := filepath.Join(configDirectory, "babycoder.json")
 
 	configJSON := `{
 		"ai_provider": {
@@ -137,7 +146,7 @@ func TestLoadOrDefaultConfigurationWithExistingFile(t *testing.T) {
 
 func TestSaveConfiguration(t *testing.T) {
 	tempDir := t.TempDir()
-	configPath := tempDir + "/.babycoder.json"
+	configPath := filepath.Join(tempDir, "babycoder.json")
 
 	// Create a configuration
 	config := DefaultConfiguration()
@@ -171,7 +180,7 @@ func TestSaveConfiguration(t *testing.T) {
 
 func TestLoadConfigurationInvalidJSON(t *testing.T) {
 	tempDir := t.TempDir()
-	configPath := tempDir + "/.babycoder.json"
+	configPath := filepath.Join(tempDir, "babycoder.json")
 
 	// Write invalid JSON
 	invalidJSON := `{"ai_provider": {invalid json}`
@@ -187,7 +196,7 @@ func TestLoadConfigurationInvalidJSON(t *testing.T) {
 }
 
 func TestLoadConfigurationNonExistentFile(t *testing.T) {
-	_, err := LoadConfiguration("/nonexistent/path/.babycoder.json")
+	_, err := LoadConfiguration("/nonexistent/path/babycoder.json")
 	if err == nil {
 		t.Fatal("Expected error when loading non-existent file, got nil")
 	}

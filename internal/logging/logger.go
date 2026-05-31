@@ -115,7 +115,7 @@ func (l *Logger) SetVerbose(verbose bool) {
 }
 
 // log writes a log message with level and timestamp
-func (l *Logger) log(level string, format string, v ...interface{}) {
+func (l *Logger) log(level string, format string, v ...any) {
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	message := fmt.Sprintf(format, v...)
 	l.logger.Printf("[%s] [%s] %s\n", timestamp, level, message)
@@ -125,34 +125,34 @@ func (l *Logger) log(level string, format string, v ...interface{}) {
 }
 
 // Debug logs a debug message (only if verbose is enabled)
-func (l *Logger) Debug(format string, v ...interface{}) {
+func (l *Logger) Debug(format string, v ...any) {
 	if l.verbose {
 		l.log("DEBUG", format, v...)
 	}
 }
 
 // Info logs an informational message
-func (l *Logger) Info(format string, v ...interface{}) {
+func (l *Logger) Info(format string, v ...any) {
 	l.log("INFO", format, v...)
 }
 
 // Warn logs a warning message
-func (l *Logger) Warn(format string, v ...interface{}) {
+func (l *Logger) Warn(format string, v ...any) {
 	l.log("WARN", format, v...)
 }
 
 // Error logs an error message
-func (l *Logger) Error(format string, v ...interface{}) {
+func (l *Logger) Error(format string, v ...any) {
 	l.log("ERROR", format, v...)
 }
 
 // Fatal logs a fatal error message and exits
-func (l *Logger) Fatal(format string, v ...interface{}) {
+func (l *Logger) Fatal(format string, v ...any) {
 	l.log("FATAL", format, v...)
 	os.Exit(1)
 }
 
 // Printf logs a formatted message (compatible with log.Logger)
-func (l *Logger) Printf(format string, v ...interface{}) {
+func (l *Logger) Printf(format string, v ...any) {
 	l.log("INFO", format, v...)
 }

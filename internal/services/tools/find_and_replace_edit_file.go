@@ -18,7 +18,7 @@ type FindAndReplaceEditFileTool struct {
 }
 
 // Execute performs find and replace on a file
-func (tool *FindAndReplaceEditFileTool) Execute(arguments map[string]interface{}) (string, error) {
+func (tool *FindAndReplaceEditFileTool) Execute(arguments map[string]any) (string, error) {
 	filePath, err := getStringArg(arguments, "file_path")
 	if err != nil {
 		return "", err
@@ -85,14 +85,13 @@ func (tool *FindAndReplaceEditFileTool) Execute(arguments map[string]interface{}
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	// Trigger background analysis and checks if this is a Go file
-	if strings.HasSuffix(filePath, ".go") {
-		if tool.analyzer != nil {
-			tool.analyzer.AnalyzeAsync()
-		}
-		if tool.testRunner != nil {
-			tool.testRunner.MarkDirty() // Mark that tests need to run
-		}
+	// Trigger background analysis and test run after any file edit. Both
+	// are no-ops if the agent has not yet supplied a build/test command.
+	if tool.analyzer != nil {
+		tool.analyzer.AnalyzeAsync()
+	}
+	if tool.testRunner != nil {
+		tool.testRunner.MarkDirty()
 	}
 
 	return fmt.Sprintf("Successfully replaced %d occurrence(s) in %s", replacementCount, filePath), nil
@@ -105,22 +104,22 @@ func (tool *FindAndReplaceEditFileTool) GetDefinition() ai_provider.Tool {
 		Function: ai_provider.ToolFunction{
 			Name:        "find_and_replace_edit_file",
 			Description: "Find and replace text in a file. Can replace first occurrence or all occurrences. The find_text must match exactly (including whitespace).",
-			Parameters: map[string]interface{}{
+			Parameters: map[string]any{
 				"type": "object",
-				"properties": map[string]interface{}{
-					"file_path": map[string]interface{}{
+				"properties": map[string]any{
+					"file_path": map[string]any{
 						"type":        "string",
 						"description": "Path to the file to edit",
 					},
-					"find_text": map[string]interface{}{
+					"find_text": map[string]any{
 						"type":        "string",
 						"description": "Exact text to find (must match exactly including whitespace)",
 					},
-					"replace_text": map[string]interface{}{
+					"replace_text": map[string]any{
 						"type":        "string",
 						"description": "Text to replace with",
 					},
-					"replace_all": map[string]interface{}{
+					"replace_all": map[string]any{
 						"type":        "boolean",
 						"description": "Whether to replace all occurrences (true) or just the first one (false, default)",
 					},

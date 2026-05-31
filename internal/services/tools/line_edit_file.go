@@ -19,7 +19,7 @@ type LineEditFileTool struct {
 }
 
 // Execute performs line-based editing on a file
-func (tool *LineEditFileTool) Execute(arguments map[string]interface{}) (string, error) {
+func (tool *LineEditFileTool) Execute(arguments map[string]any) (string, error) {
 	filePath, err := getStringArg(arguments, "file_path")
 	if err != nil {
 		return "", err
@@ -87,14 +87,14 @@ func (tool *LineEditFileTool) Execute(arguments map[string]interface{}) (string,
 
 	// Build new content
 	var result []string
-	
+
 	// Lines before the edit
 	result = append(result, lines[:startLine-1]...)
-	
+
 	// New content (split by newlines if it contains multiple lines)
 	newLines := strings.Split(newContent, "\n")
 	result = append(result, newLines...)
-	
+
 	// Lines after the edit
 	if endLine < len(lines) {
 		result = append(result, lines[endLine:]...)
@@ -106,20 +106,19 @@ func (tool *LineEditFileTool) Execute(arguments map[string]interface{}) (string,
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	// Trigger background analysis and checks if this is a Go file
-	if strings.HasSuffix(filePath, ".go") {
-		if tool.analyzer != nil {
-			tool.analyzer.AnalyzeAsync()
-		}
-		if tool.testRunner != nil {
-			tool.testRunner.MarkDirty() // Mark that tests need to run
-		}
+	// Trigger background analysis and test run after any file edit. Both
+	// are no-ops if the agent has not yet supplied a build/test command.
+	if tool.analyzer != nil {
+		tool.analyzer.AnalyzeAsync()
+	}
+	if tool.testRunner != nil {
+		tool.testRunner.MarkDirty()
 	}
 
 	linesReplaced := endLine - startLine + 1
 	linesAdded := len(newLines)
-	
-	return fmt.Sprintf("Successfully edited %s: replaced %d lines (lines %d-%d) with %d lines", 
+
+	return fmt.Sprintf("Successfully edited %s: replaced %d lines (lines %d-%d) with %d lines",
 		filePath, linesReplaced, startLine, endLine, linesAdded), nil
 }
 
@@ -130,22 +129,22 @@ func (tool *LineEditFileTool) GetDefinition() ai_provider.Tool {
 		Function: ai_provider.ToolFunction{
 			Name:        "line_edit_file",
 			Description: "Edit specific lines in a file. Replaces lines from start_line to end_line (inclusive, 1-indexed) with new_content.",
-			Parameters: map[string]interface{}{
+			Parameters: map[string]any{
 				"type": "object",
-				"properties": map[string]interface{}{
-					"file_path": map[string]interface{}{
+				"properties": map[string]any{
+					"file_path": map[string]any{
 						"type":        "string",
 						"description": "Path to the file to edit",
 					},
-					"start_line": map[string]interface{}{
+					"start_line": map[string]any{
 						"type":        "number",
 						"description": "Starting line number (1-indexed, inclusive)",
 					},
-					"end_line": map[string]interface{}{
+					"end_line": map[string]any{
 						"type":        "number",
 						"description": "Ending line number (1-indexed, inclusive)",
 					},
-					"new_content": map[string]interface{}{
+					"new_content": map[string]any{
 						"type":        "string",
 						"description": "New content to replace the specified lines. Can contain newlines for multi-line replacements.",
 					},

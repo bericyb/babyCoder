@@ -36,7 +36,7 @@ func NewPromptManager(projectRoot string) *PromptManager {
 func NewPromptManagerFromConfig(projectRoot string, mainAgentPrompt string, subAgentPrompt string) (*PromptManager, error) {
 	manager := NewPromptManager(projectRoot)
 	
-	promptConfig := map[string]interface{}{
+	promptConfig := map[string]any{
 		"main_agent": mainAgentPrompt,
 		"sub_agent":  subAgentPrompt,
 	}
@@ -92,7 +92,7 @@ func (pm *PromptManager) RenderPrompt(promptType PromptType, vars map[string]str
 }
 
 // LoadFromConfig loads prompt overrides from configuration
-func (pm *PromptManager) LoadFromConfig(config map[string]interface{}) error {
+func (pm *PromptManager) LoadFromConfig(config map[string]any) error {
 	if config == nil {
 		return nil
 	}

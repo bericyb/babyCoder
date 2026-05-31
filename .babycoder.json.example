@@ -7,7 +7,7 @@
     "api_key": ""
   },
   "agent": {
-    "max_iterations": 10
+    "max_iterations": 100
   },
   "prompts": {
     "main_agent": "",

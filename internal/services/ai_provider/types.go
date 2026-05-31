@@ -2,11 +2,13 @@ package ai_provider
 
 // Message represents a chat message
 type Message struct {
-	Role       string      `json:"role"`                  // system, user, assistant, tool
-	Content    string      `json:"content"`               // Message content
-	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`  // Tool calls made by assistant
-	ToolCallID string      `json:"tool_call_id,omitempty"` // ID for tool response messages
-	Name       string      `json:"name,omitempty"`        // Tool name for tool messages
+	Role             string     `json:"role"`                         // system, user, assistant, tool
+	Content          string     `json:"content"`                      // Message content
+	ReasoningContent string     `json:"reasoning_content,omitempty"`  // Out-of-band reasoning text emitted by reasoning-capable models (DeepSeek, LMStudio, etc.)
+	Reasoning        string     `json:"reasoning,omitempty"`          // Alternate field name used by some providers
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`         // Tool calls made by assistant
+	ToolCallID       string     `json:"tool_call_id,omitempty"`       // ID for tool response messages
+	Name             string     `json:"name,omitempty"`               // Tool name for tool messages
 }
 
 // ToolCall represents a function call request from the model
@@ -32,7 +34,7 @@ type Tool struct {
 type ToolFunction struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"` // JSON Schema
+	Parameters  map[string]any `json:"parameters"` // JSON Schema
 }
 
 // ChatCompletionRequest represents a request to the chat completion API

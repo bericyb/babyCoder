@@ -10,100 +10,59 @@ import (
 func TestGetProjectStructureTool(t *testing.T) {
 	tempDir := t.TempDir()
 
-	// Create a simple Go project structure
+	// Create a mixed-language project structure to prove the tool is
+	// language-agnostic.
 	structure := map[string]string{
-		"main.go": `package main
-
-func main() {
-	println("hello")
-}
-`,
-		"internal/utils/helper.go": `package utils
-
-func Helper() string {
-	return "help"
-}
-`,
-		"internal/models/user.go": `package models
-
-type User struct {
-	Name string
-	Age  int
-}
-
-func NewUser(name string) *User {
-	return &User{Name: name}
-}
-`,
+		"README.md":                   "# project\n",
+		"src/main.py":                 "print('hello')\n",
+		"src/utils/helper.js":         "module.exports = {}\n",
+		"lib/models/user.rb":          "class User; end\n",
+		"node_modules/dep/index.js":   "// should be skipped\n",
+		".git/HEAD":                   "ref: refs/heads/main\n",
 	}
 
-	// Create files
 	for filePath, content := range structure {
 		fullPath := filepath.Join(tempDir, filePath)
-		os.MkdirAll(filepath.Dir(fullPath), 0755)
-		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-			t.Fatalf("Failed to create test file %s: %v", filePath, err)
+		if mkdirError := os.MkdirAll(filepath.Dir(fullPath), 0755); mkdirError != nil {
+			t.Fatalf("Failed to create directory for %s: %v", filePath, mkdirError)
+		}
+		if writeError := os.WriteFile(fullPath, []byte(content), 0644); writeError != nil {
+			t.Fatalf("Failed to create test file %s: %v", filePath, writeError)
 		}
 	}
 
 	tool := &GetProjectStructureTool{ProjectRoot: tempDir}
-
-	args := map[string]interface{}{
-		"include_imports": false,
-		"include_exports": true,
-		"max_depth":       10,
+	result, executeError := tool.Execute(map[string]any{})
+	if executeError != nil {
+		t.Fatalf("Execute failed: %v", executeError)
 	}
 
-	result, err := tool.Execute(args)
-	if err != nil {
-		t.Fatalf("Failed to execute tool: %v", err)
+	// Files that should appear.
+	expectedSubstrings := []string{"README.md", "main.py", "helper.js", "user.rb", "src/", "lib/"}
+	for _, expected := range expectedSubstrings {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected output to contain %q\n---\n%s", expected, result)
+		}
 	}
 
-	// Verify output contains expected information
-	if !strings.Contains(result, "Go Project Structure") {
-		t.Error("Expected 'Go Project Structure' in output")
-	}
-
-	if !strings.Contains(result, "Total Packages:") {
-		t.Error("Expected 'Total Packages:' in output")
-	}
-
-	// Should find 3 packages: main, utils, models
-	if !strings.Contains(result, "main") {
-		t.Error("Expected to find 'main' package")
-	}
-
-	if !strings.Contains(result, "utils") {
-		t.Error("Expected to find 'utils' package")
-	}
-
-	if !strings.Contains(result, "models") {
-		t.Error("Expected to find 'models' package")
-	}
-
-	// Check for exported symbols
-	if !strings.Contains(result, "User") {
-		t.Error("Expected to find 'User' type in models package")
-	}
-
-	if !strings.Contains(result, "Helper") {
-		t.Error("Expected to find 'Helper' function in utils package")
+	// Skipped directories must not appear.
+	skippedSubstrings := []string{"node_modules", ".git"}
+	for _, skipped := range skippedSubstrings {
+		if strings.Contains(result, skipped) {
+			t.Errorf("Expected output to skip %q\n---\n%s", skipped, result)
+		}
 	}
 }
 
 func TestGetProjectStructureToolEmpty(t *testing.T) {
 	tempDir := t.TempDir()
-
 	tool := &GetProjectStructureTool{ProjectRoot: tempDir}
 
-	args := map[string]interface{}{}
-
-	result, err := tool.Execute(args)
-	if err != nil {
-		t.Fatalf("Failed to execute tool: %v", err)
+	result, executeError := tool.Execute(map[string]any{})
+	if executeError != nil {
+		t.Fatalf("Execute failed: %v", executeError)
 	}
-
-	if !strings.Contains(result, "No Go packages found") {
-		t.Errorf("Expected 'No Go packages found' message, got: %s", result)
+	if !strings.Contains(result, "empty") {
+		t.Errorf("Expected empty-project message, got:\n%s", result)
 	}
 }

@@ -2,9 +2,6 @@ package tools
 
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,341 +10,220 @@ import (
 	"github.com/exar/babycoder/internal/services/ai_provider"
 )
 
-// GetProjectStructureTool analyzes the entire Go project structure
+// GetProjectStructureTool walks the project directory and returns a
+// language-agnostic file tree. It does no AST parsing and has no language
+// preference.
 type GetProjectStructureTool struct {
-	ProjectRoot string // Made public for testing, normally set via registry
+	ProjectRoot string // Made public for testing.
 }
 
-// PackageStructure represents a Go package's structure
-type PackageStructure struct {
-	Path         string
-	Name         string
-	Files        []string
-	Imports      []string
-	Exports      *PackageExports
-	FileCount    int
-	LineCount    int
+// defaultSkipDirectories names directories that almost never contain useful
+// source code and are safe to skip across most ecosystems.
+var defaultSkipDirectories = map[string]bool{
+	".git":         true,
+	".hg":          true,
+	".svn":         true,
+	"node_modules": true,
+	"vendor":       true,
+	"__pycache__":  true,
+	".venv":        true,
+	"venv":         true,
+	"env":          true,
+	"target":       true,
+	"dist":         true,
+	"build":        true,
+	"out":          true,
+	".next":        true,
+	".nuxt":        true,
+	".cache":       true,
+	".idea":        true,
+	".vscode":      true,
+	"coverage":     true,
+	".gradle":      true,
+	".mvn":         true,
+	"bin":          true,
+	"obj":          true,
 }
 
-// PackageExports holds exported symbols from a package
-type PackageExports struct {
-	Functions  []string
-	Types      []string
-	Constants  []string
-	Variables  []string
+// treeEntry represents a single file or directory in the walk.
+type treeEntry struct {
+	relativePath string
+	isDirectory  bool
+	sizeBytes    int64
+	depth        int
 }
 
-// Execute analyzes the project structure
-func (tool *GetProjectStructureTool) Execute(arguments map[string]interface{}) (string, error) {
-	includeImports := getBoolArg(arguments, "include_imports", false)
-	includeExports := getBoolArg(arguments, "include_exports", true)
-	maxDepth := getIntArgDefault(arguments, "max_depth", 10)
+// Execute walks the project and returns a formatted file tree.
+func (tool *GetProjectStructureTool) Execute(arguments map[string]any) (string, error) {
+	maximumDepth := getIntArgDefault(arguments, "max_depth", 5)
+	includeHidden := getBoolArg(arguments, "include_hidden", false)
+	maximumEntries := getIntArgDefault(arguments, "max_entries", 500)
 
-	// Discover all Go packages
-	packages, err := tool.discoverPackages(maxDepth)
-	if err != nil {
-		return "", fmt.Errorf("failed to discover packages: %w", err)
+	entries, walkError := tool.walk(maximumDepth, includeHidden, maximumEntries)
+	if walkError != nil {
+		return "", fmt.Errorf("failed to walk project: %w", walkError)
 	}
 
-	if len(packages) == 0 {
-		return "No Go packages found in project.", nil
+	if len(entries) == 0 {
+		return "Project directory is empty (or all entries were skipped).", nil
 	}
 
-	// Build output
-	var output strings.Builder
-	
-	output.WriteString(fmt.Sprintf("# Go Project Structure\n\n"))
-	output.WriteString(fmt.Sprintf("**Project Root:** %s\n", tool.ProjectRoot))
-	output.WriteString(fmt.Sprintf("**Total Packages:** %d\n\n", len(packages)))
-
-	// Organize packages by directory depth
-	organized := tool.organizePackages(packages)
-
-	output.WriteString("## Package Hierarchy\n\n")
-	for _, pkg := range organized {
-		depth := strings.Count(pkg.Path, string(filepath.Separator))
-		indent := strings.Repeat("  ", depth)
-		
-		output.WriteString(fmt.Sprintf("%s📦 **%s** (`%s`)\n", indent, pkg.Name, pkg.Path))
-		output.WriteString(fmt.Sprintf("%s   Files: %d | Lines: ~%d\n", indent, pkg.FileCount, pkg.LineCount))
-
-		if includeExports && pkg.Exports != nil {
-			if len(pkg.Exports.Types) > 0 {
-				output.WriteString(fmt.Sprintf("%s   Types: %s\n", indent, 
-					tool.formatList(pkg.Exports.Types, 5)))
-			}
-			if len(pkg.Exports.Functions) > 0 {
-				output.WriteString(fmt.Sprintf("%s   Functions: %s\n", indent, 
-					tool.formatList(pkg.Exports.Functions, 5)))
-			}
-		}
-
-		if includeImports && len(pkg.Imports) > 0 {
-			output.WriteString(fmt.Sprintf("%s   Imports: %s\n", indent, 
-				tool.formatList(pkg.Imports, 3)))
-		}
-
-		output.WriteString("\n")
-	}
-
-	// Summary statistics
-	output.WriteString("## Summary\n\n")
 	totalFiles := 0
-	totalLines := 0
-	totalTypes := 0
-	totalFunctions := 0
-
-	for _, pkg := range packages {
-		totalFiles += pkg.FileCount
-		totalLines += pkg.LineCount
-		if pkg.Exports != nil {
-			totalTypes += len(pkg.Exports.Types)
-			totalFunctions += len(pkg.Exports.Functions)
+	totalDirectories := 0
+	var totalSizeBytes int64
+	for _, entry := range entries {
+		if entry.isDirectory {
+			totalDirectories++
+		} else {
+			totalFiles++
+			totalSizeBytes += entry.sizeBytes
 		}
 	}
 
-	output.WriteString(fmt.Sprintf("- **Total Go Files:** %d\n", totalFiles))
-	output.WriteString(fmt.Sprintf("- **Total Lines:** ~%d\n", totalLines))
-	output.WriteString(fmt.Sprintf("- **Exported Types:** %d\n", totalTypes))
-	output.WriteString(fmt.Sprintf("- **Exported Functions:** %d\n", totalFunctions))
+	var output strings.Builder
+	output.WriteString("# Project Structure\n\n")
+	output.WriteString(fmt.Sprintf("**Project Root:** %s\n", tool.ProjectRoot))
+	output.WriteString(fmt.Sprintf("**Files:** %d  |  **Directories:** %d  |  **Total Size:** %s\n",
+		totalFiles, totalDirectories, formatByteSize(totalSizeBytes)))
+	if len(entries) >= maximumEntries {
+		output.WriteString(fmt.Sprintf("\n_Note: output capped at %d entries; increase `max_entries` to see more._\n", maximumEntries))
+	}
+	output.WriteString("\n```\n")
+	for _, entry := range entries {
+		indent := strings.Repeat("  ", entry.depth)
+		name := filepath.Base(entry.relativePath)
+		if entry.isDirectory {
+			output.WriteString(fmt.Sprintf("%s%s/\n", indent, name))
+		} else {
+			output.WriteString(fmt.Sprintf("%s%s  (%s)\n", indent, name, formatByteSize(entry.sizeBytes)))
+		}
+	}
+	output.WriteString("```\n")
 
 	return output.String(), nil
 }
 
-// discoverPackages finds all Go packages in the project
-func (tool *GetProjectStructureTool) discoverPackages(maxDepth int) ([]*PackageStructure, error) {
-	packages := make(map[string]*PackageStructure)
+// walk traverses the project directory, applying skip rules and depth/entry
+// caps. Entries are returned in a stable directory-first, alphabetical order
+// suitable for tree-style rendering.
+func (tool *GetProjectStructureTool) walk(maximumDepth int, includeHidden bool, maximumEntries int) ([]treeEntry, error) {
+	var entries []treeEntry
 
-	err := filepath.Walk(tool.ProjectRoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip errors
+	var walkDirectory func(absolutePath string, depth int) error
+	walkDirectory = func(absolutePath string, depth int) error {
+		if len(entries) >= maximumEntries {
+			return nil
+		}
+		if depth > maximumDepth {
+			return nil
 		}
 
-		// Skip vendor, .git, node_modules
-		if info.IsDir() {
-			name := info.Name()
-			if name == "vendor" || name == ".git" || name == "node_modules" || strings.HasPrefix(name, ".") {
-				return filepath.SkipDir
+		directoryEntries, readError := os.ReadDir(absolutePath)
+		if readError != nil {
+			return nil // Permission denied or unreadable — skip silently.
+		}
+
+		// Sort: directories first, then files; both alphabetical.
+		sort.Slice(directoryEntries, func(i, j int) bool {
+			leftIsDirectory := directoryEntries[i].IsDir()
+			rightIsDirectory := directoryEntries[j].IsDir()
+			if leftIsDirectory != rightIsDirectory {
+				return leftIsDirectory
 			}
-		}
+			return directoryEntries[i].Name() < directoryEntries[j].Name()
+		})
 
-		// Only process .go files (not test files for cleaner output)
-		if !info.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
-			dir := filepath.Dir(path)
-			relDir, _ := filepath.Rel(tool.ProjectRoot, dir)
-			
-			// Check depth
-			depth := strings.Count(relDir, string(filepath.Separator))
-			if depth > maxDepth {
+		for _, directoryEntry := range directoryEntries {
+			if len(entries) >= maximumEntries {
 				return nil
 			}
 
-			// Get or create package structure
-			if _, exists := packages[relDir]; !exists {
-				packages[relDir] = &PackageStructure{
-					Path:    relDir,
-					Files:   []string{},
-					Imports: []string{},
-					Exports: &PackageExports{
-						Functions: []string{},
-						Types:     []string{},
-						Constants: []string{},
-						Variables: []string{},
-					},
-				}
+			name := directoryEntry.Name()
+			if !includeHidden && strings.HasPrefix(name, ".") {
+				continue
+			}
+			if directoryEntry.IsDir() && defaultSkipDirectories[name] {
+				continue
 			}
 
-			pkg := packages[relDir]
-			pkg.Files = append(pkg.Files, filepath.Base(path))
-			pkg.FileCount++
+			childAbsolutePath := filepath.Join(absolutePath, name)
+			relativePath, relativeError := filepath.Rel(tool.ProjectRoot, childAbsolutePath)
+			if relativeError != nil {
+				relativePath = childAbsolutePath
+			}
 
-			// Parse file for package info
-			tool.analyzeFile(path, pkg)
+			if directoryEntry.IsDir() {
+				entries = append(entries, treeEntry{
+					relativePath: relativePath,
+					isDirectory:  true,
+					depth:        depth,
+				})
+				if walkChildrenError := walkDirectory(childAbsolutePath, depth+1); walkChildrenError != nil {
+					return walkChildrenError
+				}
+			} else {
+				fileInformation, statError := directoryEntry.Info()
+				sizeBytes := int64(0)
+				if statError == nil {
+					sizeBytes = fileInformation.Size()
+				}
+				entries = append(entries, treeEntry{
+					relativePath: relativePath,
+					isDirectory:  false,
+					sizeBytes:    sizeBytes,
+					depth:        depth,
+				})
+			}
 		}
-
 		return nil
-	})
-
-	if err != nil {
-		return nil, err
 	}
 
-	// Convert map to slice
-	result := make([]*PackageStructure, 0, len(packages))
-	for _, pkg := range packages {
-		result = append(result, pkg)
+	if walkError := walkDirectory(tool.ProjectRoot, 0); walkError != nil {
+		return nil, walkError
 	}
-
-	return result, nil
+	return entries, nil
 }
 
-// analyzeFile extracts package info from a Go file
-func (tool *GetProjectStructureTool) analyzeFile(filePath string, pkg *PackageStructure) {
-	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
-	if err != nil {
-		return
+// formatByteSize returns a human-readable size string.
+func formatByteSize(sizeBytes int64) string {
+	const unit = 1024
+	if sizeBytes < unit {
+		return fmt.Sprintf("%d B", sizeBytes)
 	}
-
-	// Get package name (from first file)
-	if pkg.Name == "" {
-		pkg.Name = node.Name.Name
-	}
-
-	// Count lines
-	content, _ := os.ReadFile(filePath)
-	pkg.LineCount += strings.Count(string(content), "\n")
-
-	// Extract imports
-	importMap := make(map[string]bool)
-	for _, imp := range node.Imports {
-		importPath := strings.Trim(imp.Path.Value, `"`)
-		// Only include non-stdlib imports for brevity
-		if strings.Contains(importPath, ".") {
-			importMap[importPath] = true
+	divisor := int64(unit)
+	exponentLabel := "KMGTPE"
+	exponentIndex := 0
+	for value := sizeBytes / unit; value >= unit; value /= unit {
+		divisor *= unit
+		exponentIndex++
+		if exponentIndex >= len(exponentLabel)-1 {
+			break
 		}
 	}
-	for imp := range importMap {
-		if !contains(pkg.Imports, imp) {
-			pkg.Imports = append(pkg.Imports, imp)
-		}
-	}
-
-	// Extract exported symbols
-	ast.Inspect(node, func(n ast.Node) bool {
-		switch decl := n.(type) {
-		case *ast.FuncDecl:
-			if decl.Name.IsExported() {
-				funcName := decl.Name.Name
-				if decl.Recv != nil {
-					// Method
-					recvType := tool.getReceiverType(decl.Recv)
-					funcName = fmt.Sprintf("(%s) %s", recvType, funcName)
-				}
-				if !contains(pkg.Exports.Functions, funcName) {
-					pkg.Exports.Functions = append(pkg.Exports.Functions, funcName)
-				}
-			}
-
-		case *ast.GenDecl:
-			for _, spec := range decl.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					if s.Name.IsExported() {
-						typeName := s.Name.Name
-						// Add type indicator
-						switch s.Type.(type) {
-						case *ast.StructType:
-							typeName += " (struct)"
-						case *ast.InterfaceType:
-							typeName += " (interface)"
-						}
-						if !contains(pkg.Exports.Types, typeName) {
-							pkg.Exports.Types = append(pkg.Exports.Types, typeName)
-						}
-					}
-
-				case *ast.ValueSpec:
-					for _, name := range s.Names {
-						if name.IsExported() {
-							if decl.Tok == token.CONST {
-								if !contains(pkg.Exports.Constants, name.Name) {
-									pkg.Exports.Constants = append(pkg.Exports.Constants, name.Name)
-								}
-							} else if decl.Tok == token.VAR {
-								if !contains(pkg.Exports.Variables, name.Name) {
-									pkg.Exports.Variables = append(pkg.Exports.Variables, name.Name)
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		return true
-	})
+	return fmt.Sprintf("%.1f %ciB", float64(sizeBytes)/float64(divisor), exponentLabel[exponentIndex])
 }
 
-// getReceiverType extracts the receiver type from a method
-func (tool *GetProjectStructureTool) getReceiverType(recv *ast.FieldList) string {
-	if recv == nil || len(recv.List) == 0 {
-		return ""
-	}
-
-	field := recv.List[0]
-	switch t := field.Type.(type) {
-	case *ast.StarExpr:
-		if ident, ok := t.X.(*ast.Ident); ok {
-			return "*" + ident.Name
-		}
-	case *ast.Ident:
-		return t.Name
-	}
-	return ""
-}
-
-// organizePackages sorts packages for hierarchical display
-func (tool *GetProjectStructureTool) organizePackages(packages []*PackageStructure) []*PackageStructure {
-	sort.Slice(packages, func(i, j int) bool {
-		// Sort by path depth first, then alphabetically
-		depthI := strings.Count(packages[i].Path, string(filepath.Separator))
-		depthJ := strings.Count(packages[j].Path, string(filepath.Separator))
-		if depthI != depthJ {
-			return depthI < depthJ
-		}
-		return packages[i].Path < packages[j].Path
-	})
-	return packages
-}
-
-// formatList formats a slice into a readable string
-func (tool *GetProjectStructureTool) formatList(items []string, max int) string {
-	if len(items) == 0 {
-		return "none"
-	}
-
-	sort.Strings(items)
-
-	if len(items) <= max {
-		return strings.Join(items, ", ")
-	}
-
-	return fmt.Sprintf("%s, ... (+%d more)", 
-		strings.Join(items[:max], ", "), 
-		len(items)-max)
-}
-
-// contains checks if a string slice contains a value
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
-// GetDefinition returns the tool definition
+// GetDefinition returns the tool definition.
 func (tool *GetProjectStructureTool) GetDefinition() ai_provider.Tool {
 	return ai_provider.Tool{
 		Type: "function",
 		Function: ai_provider.ToolFunction{
 			Name:        "get_project_structure",
-			Description: "Analyze and display the entire Go project structure, showing all packages, their exported types/functions, and organization. Perfect for understanding the codebase architecture at a glance.",
-			Parameters: map[string]interface{}{
+			Description: "Display the project's file and directory tree. Skips common noise directories (node_modules, .git, vendor, target, dist, build, __pycache__, virtual envs, IDE folders, etc.). Language-agnostic.",
+			Parameters: map[string]any{
 				"type": "object",
-				"properties": map[string]interface{}{
-					"include_imports": map[string]interface{}{
-						"type":        "boolean",
-						"description": "Include imported packages for each package (default: false, can be verbose)",
-					},
-					"include_exports": map[string]interface{}{
-						"type":        "boolean",
-						"description": "Include exported types and functions for each package (default: true)",
-					},
-					"max_depth": map[string]interface{}{
+				"properties": map[string]any{
+					"max_depth": map[string]any{
 						"type":        "number",
-						"description": "Maximum directory depth to analyze (default: 10)",
+						"description": "Maximum directory depth to descend (default: 5)",
+					},
+					"include_hidden": map[string]any{
+						"type":        "boolean",
+						"description": "Include dotfiles and dotted directories (default: false)",
+					},
+					"max_entries": map[string]any{
+						"type":        "number",
+						"description": "Maximum number of entries to return (default: 500)",
 					},
 				},
 			},

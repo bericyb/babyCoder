@@ -24,7 +24,7 @@ type ToolRegistry struct {
 
 // Tool represents a function that can be called by the agent
 type Tool interface {
-	Execute(arguments map[string]interface{}) (string, error)
+	Execute(arguments map[string]any) (string, error)
 	GetDefinition() ai_provider.Tool
 }
 
@@ -40,7 +40,7 @@ func NewToolRegistry(projectRoot, sessionID string, codeAnalyzer *analyzer.Analy
 	}
 
 	// Register file operation tools
-	registry.registerTool(&ReadFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer})
+	registry.registerTool(&ReadFileTool{projectRoot: projectRoot})
 	registry.registerTool(&WriteFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner})
 	registry.registerTool(&ListFilesTool{projectRoot: projectRoot})
 	registry.registerTool(&LineEditFileTool{projectRoot: projectRoot, analyzer: codeAnalyzer, testRunner: testRunner})
@@ -49,7 +49,6 @@ func NewToolRegistry(projectRoot, sessionID string, codeAnalyzer *analyzer.Analy
 	// Register code analysis tools
 	registry.registerTool(&CheckCodeStatusTool{analyzer: codeAnalyzer})
 	registry.registerTool(&GetFileDiagnosticsTool{analyzer: codeAnalyzer})
-	registry.registerTool(&GetPackageOutlineTool{analyzer: codeAnalyzer})
 	registry.registerTool(&GetProjectStructureTool{ProjectRoot: projectRoot})
 
 	// Register test tools
@@ -90,7 +89,7 @@ func (registry *ToolRegistry) GetAllDefinitions() []ai_provider.Tool {
 }
 
 // Execute executes a tool by name with the given arguments
-func (registry *ToolRegistry) Execute(toolName string, arguments map[string]interface{}) (string, error) {
+func (registry *ToolRegistry) Execute(toolName string, arguments map[string]any) (string, error) {
 	tool, exists := registry.GetTool(toolName)
 	if !exists {
 		return "", fmt.Errorf("tool not found: %s", toolName)
@@ -131,7 +130,7 @@ func (registry *ToolRegistry) resolvePath(filePath string) (string, error) {
 }
 
 // Helper function to get string argument
-func getStringArg(arguments map[string]interface{}, key string) (string, error) {
+func getStringArg(arguments map[string]any, key string) (string, error) {
 	value, exists := arguments[key]
 	if !exists {
 		return "", fmt.Errorf("missing required argument: %s", key)
@@ -146,7 +145,7 @@ func getStringArg(arguments map[string]interface{}, key string) (string, error) 
 }
 
 // Helper function to get int argument
-func getIntArg(arguments map[string]interface{}, key string) (int, error) {
+func getIntArg(arguments map[string]any, key string) (int, error) {
 	value, exists := arguments[key]
 	if !exists {
 		return 0, fmt.Errorf("missing required argument: %s", key)
@@ -164,7 +163,7 @@ func getIntArg(arguments map[string]interface{}, key string) (int, error) {
 }
 
 // Helper function to get optional bool argument
-func getBoolArg(arguments map[string]interface{}, key string, defaultValue bool) bool {
+func getBoolArg(arguments map[string]any, key string, defaultValue bool) bool {
 	value, exists := arguments[key]
 	if !exists {
 		return defaultValue
@@ -185,7 +184,7 @@ func fileExists(path string) bool {
 }
 
 // Helper function to get optional string argument with default
-func getStringArgDefault(arguments map[string]interface{}, key string, defaultValue string) string {
+func getStringArgDefault(arguments map[string]any, key string, defaultValue string) string {
 	value, exists := arguments[key]
 	if !exists {
 		return defaultValue
@@ -200,7 +199,7 @@ func getStringArgDefault(arguments map[string]interface{}, key string, defaultVa
 }
 
 // Helper function to get optional float64 argument with default
-func getFloat64ArgDefault(arguments map[string]interface{}, key string, defaultValue float64) float64 {
+func getFloat64ArgDefault(arguments map[string]any, key string, defaultValue float64) float64 {
 	value, exists := arguments[key]
 	if !exists {
 		return defaultValue
@@ -215,7 +214,7 @@ func getFloat64ArgDefault(arguments map[string]interface{}, key string, defaultV
 }
 
 // Helper function to get optional int argument with default
-func getIntArgDefault(arguments map[string]interface{}, key string, defaultValue int) int {
+func getIntArgDefault(arguments map[string]any, key string, defaultValue int) int {
 	value, exists := arguments[key]
 	if !exists {
 		return defaultValue
@@ -231,52 +230,3 @@ func getIntArgDefault(arguments map[string]interface{}, key string, defaultValue
 		return defaultValue
 	}
 }
-
-// Helper function to get string array argument
-func getStringArrayArg(arguments map[string]interface{}, key string) ([]string, error) {
-	value, exists := arguments[key]
-	if !exists {
-		return nil, fmt.Errorf("missing required argument: %s", key)
-	}
-
-	arrayValue, ok := value.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("argument %s must be an array", key)
-	}
-
-	result := make([]string, len(arrayValue))
-	for i, item := range arrayValue {
-		strItem, ok := item.(string)
-		if !ok {
-			return nil, fmt.Errorf("argument %s must be an array of strings", key)
-		}
-		result[i] = strItem
-	}
-
-	return result, nil
-}
-
-// Helper function to get optional string array argument with default
-func getStringArrayArgDefault(arguments map[string]interface{}, key string, defaultValue []string) []string {
-	value, exists := arguments[key]
-	if !exists {
-		return defaultValue
-	}
-
-	arrayValue, ok := value.([]interface{})
-	if !ok {
-		return defaultValue
-	}
-
-	result := make([]string, len(arrayValue))
-	for i, item := range arrayValue {
-		strItem, ok := item.(string)
-		if !ok {
-			return defaultValue
-		}
-		result[i] = strItem
-	}
-
-	return result
-}
-

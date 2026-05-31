@@ -97,7 +97,7 @@ Currently hardcoded:
 - Session summary: Last 10 messages
 - Dream size: 1-2 paragraphs (LLM-maintained)
 
-Future: Add to `.babycoder.json` for customization.
+Future: Add to `.babycoder/babycoder.json` for customization.
 
 ## Example Workflow
 
@@ -152,7 +152,7 @@ echo "Test project for AI coding" > .babycoder/dream.txt
 Potential improvements:
 - Initialize dream from README on first run (condensed by LLM)
 - Add `./babyCoder memory show` CLI command
-- Configure idle timeout in `.babycoder.json`
+- Configure idle timeout in `.babycoder/babycoder.json`
 - Track dream version/update count
 - Export dream history for review
 

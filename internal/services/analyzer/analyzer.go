@@ -2,93 +2,113 @@ package analyzer
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/exar/babycoder/internal/services/ai_provider"
 )
 
-// Diagnostic represents a single issue found in code
+// Diagnostic represents a single issue found in code, extracted from a
+// build/lint command's output by an AI summarization pass.
 type Diagnostic struct {
 	FilePath string `json:"file_path"`
 	Line     int    `json:"line"`
 	Column   int    `json:"column"`
 	Severity string `json:"severity"` // error, warning, info
 	Message  string `json:"message"`
-	Source   string `json:"source"` // go build, go vet, parser
+	Source   string `json:"source"` // the command that produced it
 }
 
-// PackageInfo represents information about a Go package
-type PackageInfo struct {
-	PackageName string              `json:"package_name"`
-	FilePath    string              `json:"file_path"`
-	Functions   []FunctionSignature `json:"functions"`
-	Structs     []StructDefinition  `json:"structs"`
-	Interfaces  []InterfaceDefinition `json:"interfaces"`
-	Imports     []string            `json:"imports"`
+// AnalysisResult is the structured shape we expect the AI to return after
+// reading raw build/lint output.
+type AnalysisResult struct {
+	Status      string       `json:"status"` // "pass" or "fail"
+	Summary     string       `json:"summary"`
+	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
-// FunctionSignature represents a function declaration
-type FunctionSignature struct {
-	Name       string `json:"name"`
-	Receiver   string `json:"receiver,omitempty"` // For methods
-	Parameters string `json:"parameters"`
-	Results    string `json:"results"`
-	Line       int    `json:"line"`
-}
-
-// StructDefinition represents a struct type
-type StructDefinition struct {
-	Name   string   `json:"name"`
-	Fields []string `json:"fields"`
-	Line   int      `json:"line"`
-}
-
-// InterfaceDefinition represents an interface type
-type InterfaceDefinition struct {
-	Name    string   `json:"name"`
-	Methods []string `json:"methods"`
-	Line    int      `json:"line"`
-}
-
-// Analyzer performs background code analysis
+// Analyzer runs a user-supplied build/lint command and uses an AI provider
+// to turn raw output into structured diagnostics with a binary pass/fail
+// status. It is language-agnostic.
 type Analyzer struct {
-	projectRoot  string
+	projectRoot string
+	provider    ai_provider.Provider
+
 	mutex        sync.RWMutex
+	lastCommand  string
+	lastStatus   string
+	lastSummary  string
 	diagnostics  []Diagnostic
-	packages     map[string]*PackageInfo // filepath -> PackageInfo
 	lastAnalysis time.Time
 	isAnalyzing  bool
 }
 
-// NewAnalyzer creates a new code analyzer
-func NewAnalyzer(projectRoot string) *Analyzer {
+// NewAnalyzer creates a new code analyzer. The provider is used to summarize
+// raw command output into structured diagnostics.
+func NewAnalyzer(projectRoot string, provider ai_provider.Provider) *Analyzer {
 	return &Analyzer{
 		projectRoot: projectRoot,
+		provider:    provider,
 		diagnostics: []Diagnostic{},
-		packages:    make(map[string]*PackageInfo),
+		lastStatus:  "unknown",
 	}
 }
 
-// AnalyzeAsync triggers background analysis without blocking
-func (analyzer *Analyzer) AnalyzeAsync() {
-	go analyzer.Analyze()
+// SetCommand records the build/lint command to use for subsequent background
+// runs (e.g. after file edits). Does not run the command.
+func (analyzer *Analyzer) SetCommand(command string) {
+	analyzer.mutex.Lock()
+	defer analyzer.mutex.Unlock()
+	analyzer.lastCommand = command
 }
 
-// Analyze runs full project analysis (parsing, build, vet)
-func (analyzer *Analyzer) Analyze() error {
+// LastCommand returns the most recently used build/lint command, or empty
+// string if none has been set.
+func (analyzer *Analyzer) LastCommand() string {
+	analyzer.mutex.RLock()
+	defer analyzer.mutex.RUnlock()
+	return analyzer.lastCommand
+}
+
+// AnalyzeAsync triggers a background analysis using the last-known command.
+// No-op if no command has ever been supplied.
+func (analyzer *Analyzer) AnalyzeAsync() {
+	analyzer.mutex.RLock()
+	command := analyzer.lastCommand
+	analyzer.mutex.RUnlock()
+	if command == "" {
+		return
+	}
+	go func() {
+		// Background analyses get their own context with a generous timeout
+		// so they cannot block forever on a hung build.
+		backgroundContext, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		_ = analyzer.Analyze(backgroundContext, command)
+	}()
+}
+
+// Analyze runs the supplied command in the project root, captures its
+// combined output, and uses the AI provider to extract pass/fail status
+// and structured diagnostics. The command is remembered for future
+// background runs.
+func (analyzer *Analyzer) Analyze(parentContext context.Context, command string) error {
+	if strings.TrimSpace(command) == "" {
+		return fmt.Errorf("analyze: command must not be empty")
+	}
+
 	analyzer.mutex.Lock()
 	if analyzer.isAnalyzing {
 		analyzer.mutex.Unlock()
-		return nil // Already running
+		return nil // Already running; skip to avoid pile-up.
 	}
 	analyzer.isAnalyzing = true
+	analyzer.lastCommand = command
 	analyzer.mutex.Unlock()
 
 	defer func() {
@@ -98,300 +118,213 @@ func (analyzer *Analyzer) Analyze() error {
 		analyzer.mutex.Unlock()
 	}()
 
-	// Clear previous results
-	analyzer.mutex.Lock()
-	analyzer.diagnostics = []Diagnostic{}
-	analyzer.packages = make(map[string]*PackageInfo)
-	analyzer.mutex.Unlock()
+	// Run the command, capturing both streams.
+	executionContext, cancel := context.WithTimeout(parentContext, 5*time.Minute)
+	defer cancel()
 
-	// 1. Parse all Go files and build package info
-	if err := analyzer.parseGoFiles(); err != nil {
-		return fmt.Errorf("parse failed: %w", err)
+	shellCommand := exec.CommandContext(executionContext, "sh", "-c", command)
+	shellCommand.Dir = analyzer.projectRoot
+
+	var stdoutBuffer, stderrBuffer bytes.Buffer
+	shellCommand.Stdout = &stdoutBuffer
+	shellCommand.Stderr = &stderrBuffer
+
+	runError := shellCommand.Run()
+	exitCode := 0
+	if shellCommand.ProcessState != nil {
+		exitCode = shellCommand.ProcessState.ExitCode()
 	}
 
-	// 2. Run go build to find compile errors
-	analyzer.runGoBuild()
+	combinedOutput := stdoutBuffer.String()
+	if stderrBuffer.Len() > 0 {
+		if combinedOutput != "" {
+			combinedOutput += "\n"
+		}
+		combinedOutput += stderrBuffer.String()
+	}
 
-	// 3. Run go vet to find potential issues
-	analyzer.runGoVet()
+	// Summarize via AI even on exit 0 — a successful exit code is the
+	// strongest pass signal, but we still let the model produce a summary.
+	analysisResult, summarizeError := analyzer.summarize(parentContext, command, exitCode, combinedOutput)
+	if summarizeError != nil {
+		// Fall back to a heuristic so the agent still gets a usable result.
+		analysisResult = fallbackResult(exitCode, combinedOutput, command)
+	}
 
+	analyzer.mutex.Lock()
+	analyzer.lastStatus = analysisResult.Status
+	analyzer.lastSummary = analysisResult.Summary
+	analyzer.diagnostics = analysisResult.Diagnostics
+	analyzer.mutex.Unlock()
+
+	// We deliberately do not return runError to the caller: a non-zero exit
+	// code is the normal "fail" path and the structured result already
+	// reflects it.
+	_ = runError
 	return nil
 }
 
-// parseGoFiles walks the project and parses all .go files
-func (analyzer *Analyzer) parseGoFiles() error {
-	fileSet := token.NewFileSet()
-
-	return filepath.Walk(analyzer.projectRoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip non-Go files
-		if info.IsDir() || !strings.HasSuffix(path, ".go") {
-			return nil
-		}
-
-		// Skip vendor and hidden directories
-		relativePath, _ := filepath.Rel(analyzer.projectRoot, path)
-		if strings.Contains(relativePath, "vendor/") || strings.HasPrefix(relativePath, ".") {
-			return nil
-		}
-
-		// Parse the file
-		file, err := parser.ParseFile(fileSet, path, nil, parser.ParseComments)
-		if err != nil {
-			// Add parse error as diagnostic
-			analyzer.addDiagnostic(Diagnostic{
-				FilePath: relativePath,
-				Line:     0,
-				Column:   0,
-				Severity: "error",
-				Message:  fmt.Sprintf("Parse error: %s", err.Error()),
-				Source:   "parser",
-			})
-			return nil // Continue parsing other files
-		}
-
-		// Extract package information
-		packageInfo := analyzer.extractPackageInfo(file, fileSet, relativePath)
-		analyzer.mutex.Lock()
-		analyzer.packages[relativePath] = packageInfo
-		analyzer.mutex.Unlock()
-
-		return nil
-	})
-}
-
-// extractPackageInfo extracts functions, structs, interfaces from AST
-func (analyzer *Analyzer) extractPackageInfo(file *ast.File, fileSet *token.FileSet, filePath string) *PackageInfo {
-	packageInfo := &PackageInfo{
-		PackageName: file.Name.Name,
-		FilePath:    filePath,
-		Functions:   []FunctionSignature{},
-		Structs:     []StructDefinition{},
-		Interfaces:  []InterfaceDefinition{},
-		Imports:     []string{},
+// summarize asks the AI provider to convert raw command output into a
+// structured AnalysisResult. Returns an error if the model response cannot
+// be parsed.
+func (analyzer *Analyzer) summarize(parentContext context.Context, command string, exitCode int, rawOutput string) (AnalysisResult, error) {
+	// Cap raw output to avoid blowing the model's context.
+	const maximumOutputCharacters = 16000
+	truncatedOutput := rawOutput
+	wasTruncated := false
+	if len(truncatedOutput) > maximumOutputCharacters {
+		// Keep the tail — error messages typically appear last.
+		truncatedOutput = "...[output truncated, showing last portion]...\n" +
+			truncatedOutput[len(truncatedOutput)-maximumOutputCharacters:]
+		wasTruncated = true
 	}
 
-	// Extract imports
-	for _, importSpec := range file.Imports {
-		importPath := strings.Trim(importSpec.Path.Value, `"`)
-		packageInfo.Imports = append(packageInfo.Imports, importPath)
-	}
+	systemPrompt := `You analyze the output of a developer's build, compile, or lint command and return a strict JSON object describing the result.
 
-	// Walk the AST
-	ast.Inspect(file, func(node ast.Node) bool {
-		switch declaration := node.(type) {
-		case *ast.FuncDecl:
-			// Extract function/method signature
-			functionSignature := FunctionSignature{
-				Name:       declaration.Name.Name,
-				Parameters: analyzer.formatFieldList(declaration.Type.Params),
-				Results:    analyzer.formatFieldList(declaration.Type.Results),
-				Line:       fileSet.Position(declaration.Pos()).Line,
-			}
-
-			// Check if it's a method (has receiver)
-			if declaration.Recv != nil && len(declaration.Recv.List) > 0 {
-				functionSignature.Receiver = analyzer.formatFieldList(declaration.Recv)
-			}
-
-			packageInfo.Functions = append(packageInfo.Functions, functionSignature)
-
-		case *ast.TypeSpec:
-			// Check if it's a struct
-			if structType, ok := declaration.Type.(*ast.StructType); ok {
-				structDefinition := StructDefinition{
-					Name:   declaration.Name.Name,
-					Fields: []string{},
-					Line:   fileSet.Position(declaration.Pos()).Line,
-				}
-
-				// Extract field names and types
-				if structType.Fields != nil {
-					for _, field := range structType.Fields.List {
-						fieldType := analyzer.formatExpr(field.Type)
-						if len(field.Names) > 0 {
-							for _, name := range field.Names {
-								structDefinition.Fields = append(structDefinition.Fields, fmt.Sprintf("%s %s", name.Name, fieldType))
-							}
-						} else {
-							// Embedded field
-							structDefinition.Fields = append(structDefinition.Fields, fieldType)
-						}
-					}
-				}
-
-				packageInfo.Structs = append(packageInfo.Structs, structDefinition)
-			}
-
-			// Check if it's an interface
-			if interfaceType, ok := declaration.Type.(*ast.InterfaceType); ok {
-				interfaceDefinition := InterfaceDefinition{
-					Name:    declaration.Name.Name,
-					Methods: []string{},
-					Line:    fileSet.Position(declaration.Pos()).Line,
-				}
-
-				// Extract method signatures
-				if interfaceType.Methods != nil {
-					for _, method := range interfaceType.Methods.List {
-						if len(method.Names) > 0 {
-							methodName := method.Names[0].Name
-							methodType := analyzer.formatExpr(method.Type)
-							interfaceDefinition.Methods = append(interfaceDefinition.Methods, fmt.Sprintf("%s%s", methodName, methodType))
-						}
-					}
-				}
-
-				packageInfo.Interfaces = append(packageInfo.Interfaces, interfaceDefinition)
-			}
-		}
-		return true
-	})
-
-	return packageInfo
+The JSON object MUST conform to this schema:
+{
+  "status": "pass" | "fail",
+  "summary": string,
+  "diagnostics": [
+    {
+      "file_path": string,
+      "line": integer,
+      "column": integer,
+      "severity": "error" | "warning" | "info",
+      "message": string,
+      "source": string
+    }
+  ]
 }
 
-// formatFieldList formats function parameters or results
-func (analyzer *Analyzer) formatFieldList(fieldList *ast.FieldList) string {
-	if fieldList == nil || len(fieldList.List) == 0 {
+Rules:
+- "status" is "fail" if the command produced any errors that prevented success, otherwise "pass".
+- Each diagnostic represents one distinct issue. Use line/column 0 if unknown.
+- "source" should identify the originating tool (e.g. "build", "lint", "compiler"); if unknown, use the command name.
+- Return ONLY the JSON object. No prose, no markdown fences.`
+
+	userPrompt := fmt.Sprintf(
+		"Command executed: %s\nExit code: %d\nTruncated: %v\n\n--- BEGIN OUTPUT ---\n%s\n--- END OUTPUT ---",
+		command, exitCode, wasTruncated, truncatedOutput,
+	)
+
+	request := ai_provider.ChatCompletionRequest{
+		Messages: []ai_provider.Message{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		},
+	}
+
+	response, providerError := analyzer.provider.ChatCompletion(parentContext, request)
+	if providerError != nil {
+		return AnalysisResult{}, fmt.Errorf("ai summarization failed: %w", providerError)
+	}
+	if len(response.Choices) == 0 {
+		return AnalysisResult{}, fmt.Errorf("ai summarization returned no choices")
+	}
+
+	rawResponse := strings.TrimSpace(response.Choices[0].Message.Content)
+	jsonPayload := extractJSONObject(rawResponse)
+	if jsonPayload == "" {
+		return AnalysisResult{}, fmt.Errorf("ai summarization returned no JSON: %q", rawResponse)
+	}
+
+	var result AnalysisResult
+	if unmarshalError := json.Unmarshal([]byte(jsonPayload), &result); unmarshalError != nil {
+		return AnalysisResult{}, fmt.Errorf("failed to parse ai response: %w", unmarshalError)
+	}
+
+	// Normalize status.
+	switch strings.ToLower(strings.TrimSpace(result.Status)) {
+	case "pass":
+		result.Status = "pass"
+	default:
+		result.Status = "fail"
+	}
+
+	// Default source on diagnostics that omit it.
+	commandName := firstWord(command)
+	for index := range result.Diagnostics {
+		if strings.TrimSpace(result.Diagnostics[index].Source) == "" {
+			result.Diagnostics[index].Source = commandName
+		}
+		if strings.TrimSpace(result.Diagnostics[index].Severity) == "" {
+			result.Diagnostics[index].Severity = "error"
+		}
+	}
+
+	return result, nil
+}
+
+// fallbackResult is used when the AI summarization fails; produces a
+// minimally useful result from exit code alone.
+func fallbackResult(exitCode int, rawOutput string, command string) AnalysisResult {
+	status := "pass"
+	if exitCode != 0 {
+		status = "fail"
+	}
+	summary := fmt.Sprintf("AI summarization unavailable; reporting raw exit code %d.", exitCode)
+	diagnostics := []Diagnostic{}
+	if exitCode != 0 {
+		excerpt := strings.TrimSpace(rawOutput)
+		if len(excerpt) > 1000 {
+			excerpt = excerpt[len(excerpt)-1000:]
+		}
+		diagnostics = append(diagnostics, Diagnostic{
+			Severity: "error",
+			Message:  excerpt,
+			Source:   firstWord(command),
+		})
+	}
+	return AnalysisResult{Status: status, Summary: summary, Diagnostics: diagnostics}
+}
+
+// extractJSONObject returns the first balanced {...} substring found, to be
+// resilient against models that wrap JSON in prose or code fences.
+func extractJSONObject(text string) string {
+	startIndex := strings.Index(text, "{")
+	if startIndex < 0 {
 		return ""
 	}
-
-	var parts []string
-	for _, field := range fieldList.List {
-		fieldType := analyzer.formatExpr(field.Type)
-		if len(field.Names) > 0 {
-			for _, name := range field.Names {
-				parts = append(parts, fmt.Sprintf("%s %s", name.Name, fieldType))
+	depth := 0
+	for index := startIndex; index < len(text); index++ {
+		switch text[index] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return text[startIndex : index+1]
 			}
-		} else {
-			parts = append(parts, fieldType)
 		}
 	}
-
-	return strings.Join(parts, ", ")
+	return ""
 }
 
-// formatExpr formats an AST expression to string
-func (analyzer *Analyzer) formatExpr(expr ast.Expr) string {
-	switch exprType := expr.(type) {
-	case *ast.Ident:
-		return exprType.Name
-	case *ast.StarExpr:
-		return "*" + analyzer.formatExpr(exprType.X)
-	case *ast.ArrayType:
-		return "[]" + analyzer.formatExpr(exprType.Elt)
-	case *ast.MapType:
-		return fmt.Sprintf("map[%s]%s", analyzer.formatExpr(exprType.Key), analyzer.formatExpr(exprType.Value))
-	case *ast.SelectorExpr:
-		return fmt.Sprintf("%s.%s", analyzer.formatExpr(exprType.X), exprType.Sel.Name)
-	case *ast.FuncType:
-		params := analyzer.formatFieldList(exprType.Params)
-		results := analyzer.formatFieldList(exprType.Results)
-		if results != "" {
-			return fmt.Sprintf("func(%s) (%s)", params, results)
-		}
-		return fmt.Sprintf("func(%s)", params)
-	case *ast.InterfaceType:
-		return "interface{}"
-	case *ast.ChanType:
-		return "chan " + analyzer.formatExpr(exprType.Value)
-	case *ast.Ellipsis:
-		return "..." + analyzer.formatExpr(exprType.Elt)
-	default:
-		return "unknown"
+func firstWord(command string) string {
+	trimmed := strings.TrimSpace(command)
+	if trimmed == "" {
+		return "command"
 	}
-}
-
-// runGoBuild executes go build and captures errors
-func (analyzer *Analyzer) runGoBuild() {
-	command := exec.Command("go", "build", "./...")
-	command.Dir = analyzer.projectRoot
-
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-
-	err := command.Run()
-	if err != nil {
-		// Parse build errors
-		output := stderr.String()
-		analyzer.parseBuildOutput(output, "go build")
-	}
-}
-
-// runGoVet executes go vet and captures warnings
-func (analyzer *Analyzer) runGoVet() {
-	command := exec.Command("go", "vet", "./...")
-	command.Dir = analyzer.projectRoot
-
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-
-	err := command.Run()
-	if err != nil {
-		// Parse vet warnings
-		output := stderr.String()
-		analyzer.parseBuildOutput(output, "go vet")
-	}
-}
-
-// parseBuildOutput parses go build/vet output into diagnostics
-func (analyzer *Analyzer) parseBuildOutput(output string, source string) {
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-
-		// Parse format: ./path/file.go:123:45: error message
-		parts := strings.SplitN(line, ":", 4)
-		if len(parts) >= 4 {
-			filePath := strings.TrimPrefix(parts[0], "./")
-			lineNum := 0
-			colNum := 0
-			fmt.Sscanf(parts[1], "%d", &lineNum)
-			fmt.Sscanf(parts[2], "%d", &colNum)
-			message := strings.TrimSpace(parts[3])
-
-			severity := "error"
-			if source == "go vet" {
-				severity = "warning"
-			}
-
-			analyzer.addDiagnostic(Diagnostic{
-				FilePath: filePath,
-				Line:     lineNum,
-				Column:   colNum,
-				Severity: severity,
-				Message:  message,
-				Source:   source,
-			})
+	for index := 0; index < len(trimmed); index++ {
+		if trimmed[index] == ' ' || trimmed[index] == '\t' {
+			return trimmed[:index]
 		}
 	}
+	return trimmed
 }
 
-// addDiagnostic adds a diagnostic to the list (thread-safe)
-func (analyzer *Analyzer) addDiagnostic(diagnostic Diagnostic) {
-	analyzer.mutex.Lock()
-	defer analyzer.mutex.Unlock()
-	analyzer.diagnostics = append(analyzer.diagnostics, diagnostic)
-}
-
-// GetDiagnostics returns all diagnostics (thread-safe)
+// GetDiagnostics returns all current diagnostics (thread-safe).
 func (analyzer *Analyzer) GetDiagnostics() []Diagnostic {
 	analyzer.mutex.RLock()
 	defer analyzer.mutex.RUnlock()
-	
-	// Return a copy to avoid race conditions
+
 	diagnosticsCopy := make([]Diagnostic, len(analyzer.diagnostics))
 	copy(diagnosticsCopy, analyzer.diagnostics)
 	return diagnosticsCopy
 }
 
-// GetFileDiagnostics returns diagnostics for a specific file
+// GetFileDiagnostics returns diagnostics for a specific file.
 func (analyzer *Analyzer) GetFileDiagnostics(filePath string) []Diagnostic {
 	analyzer.mutex.RLock()
 	defer analyzer.mutex.RUnlock()
@@ -405,47 +338,29 @@ func (analyzer *Analyzer) GetFileDiagnostics(filePath string) []Diagnostic {
 	return fileDiagnostics
 }
 
-// GetPackageInfo returns package info for a specific file
-func (analyzer *Analyzer) GetPackageInfo(filePath string) *PackageInfo {
-	analyzer.mutex.RLock()
-	defer analyzer.mutex.RUnlock()
-
-	return analyzer.packages[filePath]
-}
-
-// GetAllPackages returns all parsed package information
-func (analyzer *Analyzer) GetAllPackages() map[string]*PackageInfo {
-	analyzer.mutex.RLock()
-	defer analyzer.mutex.RUnlock()
-
-	// Return a copy
-	packagesCopy := make(map[string]*PackageInfo)
-	for key, value := range analyzer.packages {
-		packagesCopy[key] = value
-	}
-	return packagesCopy
-}
-
-// GetStatus returns analysis status and summary
-func (analyzer *Analyzer) GetStatus() map[string]interface{} {
+// GetStatus returns the current analysis status (thread-safe).
+func (analyzer *Analyzer) GetStatus() map[string]any {
 	analyzer.mutex.RLock()
 	defer analyzer.mutex.RUnlock()
 
 	errorCount := 0
 	warningCount := 0
 	for _, diagnostic := range analyzer.diagnostics {
-		if diagnostic.Severity == "error" {
+		switch diagnostic.Severity {
+		case "error":
 			errorCount++
-		} else if diagnostic.Severity == "warning" {
+		case "warning":
 			warningCount++
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"is_analyzing":  analyzer.isAnalyzing,
 		"last_analysis": analyzer.lastAnalysis,
+		"last_command":  analyzer.lastCommand,
+		"last_status":   analyzer.lastStatus,
+		"last_summary":  analyzer.lastSummary,
 		"error_count":   errorCount,
 		"warning_count": warningCount,
-		"file_count":    len(analyzer.packages),
 	}
 }

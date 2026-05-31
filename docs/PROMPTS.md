@@ -26,7 +26,7 @@ Provide a concise summary with key findings and relevant file references.
 
 ### Option 1: Inline Override
 
-Edit `.babycoder.json`:
+Edit `.babycoder/babycoder.json`:
 
 ```json
 {
@@ -51,7 +51,7 @@ Company Standards:
 Available tools: read_file, write_file, edit files, run tests, etc.
 ```
 
-Reference in `.babycoder.json`:
+Reference in `.babycoder/babycoder.json`:
 ```json
 {
   "prompts": {
@@ -140,9 +140,9 @@ subPrompt := pm.RenderPrompt(prompts.SubAgent, map[string]string{
 
 - `internal/prompts/manager.go` - Prompt loading and management
 - `internal/prompts/defaults.go` - Default prompts
-- `.babycoder.json` - Configuration file with prompt overrides
+- `.babycoder/babycoder.json` - Configuration file with prompt overrides
 
 ## See Also
 
-- `.babycoder.json.example` - Example configuration file
+- `.babycoder/babycoder.json.example` - Example configuration file
 - The prompts are intentionally simple - customize as needed for your use case
